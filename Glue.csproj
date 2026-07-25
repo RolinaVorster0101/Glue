@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <RootNamespace>Glue</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Colors.axaml is a plain ResourceDictionary with no x:Class, so it isn't
+         picked up by Avalonia's default glob under a plain Microsoft.NET.Sdk
+         project and needs to be declared explicitly. It lives in the Styles/
+         subfolder alongside Glue.csproj. -->
+    <AvaloniaResource Include="Styles/Colors.axaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.0" />
+    <!-- Avalonia's port of AvalonEdit — the actual editor-core dependency for our shell.
+         Note the package ID is "Avalonia.AvaloniaEdit", not just "AvaloniaEdit". -->
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.2.0" />
+    <!-- Roslyn — hosted in-process for C# diagnostics/completion/formatting/folding -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+  </ItemGroup>
+
+</Project>
