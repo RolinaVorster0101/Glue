@@ -6,7 +6,8 @@
         Title="Glue"
         Width="1100" Height="720"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource BgCanvasBrush}">
+        Background="{DynamicResource BgCanvasBrush}"
+        KeyDown="OnWindowKeyDown">
 
     <DockPanel>
 
@@ -18,6 +19,13 @@
                 <MenuItem Header="_Save" Click="OnSaveClicked" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="OnExitClicked" />
+            </MenuItem>
+            <MenuItem Header="_Edit" Foreground="{DynamicResource TextPrimaryBrush}">
+                <!-- Ctrl+Alt+F is a placeholder single-key shortcut. A real VS-style
+                     chord (Ctrl+K, Ctrl+D) needs proper keybinding infrastructure,
+                     which arrives with the Command Palette / Settings work later
+                     in docs/ROADMAP.md, section 2.15. -->
+                <MenuItem Header="_Format Document" InputGesture="Ctrl+Alt+F" Click="OnFormatDocumentClicked" />
             </MenuItem>
             <MenuItem Header="_View" Foreground="{DynamicResource TextPrimaryBrush}">
                 <MenuItem Header="_Expand All" Click="OnExpandAllClicked" />

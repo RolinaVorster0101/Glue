@@ -135,6 +135,38 @@ public partial class MainWindow : Window
         foreach (var section in _foldingManager.AllFoldings) section.IsFolded = true;
     }
 
+    private void OnFormatDocumentClicked(object? sender, RoutedEventArgs e) => FormatDocument();
+
+    private void OnWindowKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        var isCtrlAltF = e.Key == Avalonia.Input.Key.F
+            && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)
+            && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Alt);
+
+        if (isCtrlAltF)
+        {
+            FormatDocument();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Formats the whole document via Roslyn (Services/RoslynFormattingService.cs).
+    /// Reformatting shifts offsets throughout the file, so fold state gets
+    /// recomputed fresh afterward rather than preserved — any regions the
+    /// user had manually collapsed before formatting will re-expand. That's
+    /// an acceptable tradeoff for now, not something silently broken.
+    /// </summary>
+    private void FormatDocument()
+    {
+        var caretOffset = Editor.CaretOffset;
+
+        Editor.Text = RoslynFormattingService.Format(Editor.Text);
+
+        Editor.CaretOffset = Math.Min(caretOffset, Editor.Text.Length);
+        ReanalyzeCurrentFile(restoreFoldState: false);
+    }
+
     private DiagnosticDisplayItem ToDisplayItem(DiagnosticItem d) => new()
     {
         SeverityGlyph = d.Severity switch
