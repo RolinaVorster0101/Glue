@@ -16,6 +16,11 @@
          project and needs to be declared explicitly. It lives in the Styles/
          subfolder alongside Glue.csproj. -->
     <AvaloniaResource Include="Styles/Colors.axaml" />
+    <!-- Custom C# syntax highlighting definition matching docs/STYLEGUIDE.md.
+         Loaded manually in MainWindow.axaml.cs via HighlightingLoader, not
+         picked up by any automatic mechanism, so it needs the same explicit
+         treatment as Colors.axaml above. -->
+    <AvaloniaResource Include="Styles/GlueCSharp.xshd" />
   </ItemGroup>
 
   <ItemGroup>

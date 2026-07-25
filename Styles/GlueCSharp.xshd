@@ -1,0 +1,159 @@
+<SyntaxDefinition name="Glue C#" extensions=".cs"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <!--
+    Color values here are kept in sync with docs/STYLEGUIDE.md, section 2
+    ("Syntax highlighting (code editor)"). If a value changes in the style
+    guide, update it here too.
+  -->
+  <Color name="Comment"   foreground="#6A9955" />
+  <Color name="String"    foreground="#CE9178" />
+  <Color name="Keyword"   foreground="#C792EA" />
+  <Color name="Type"      foreground="#4EC9B0" />
+  <Color name="Method"    foreground="#DCDCAA" />
+  <Color name="Attribute" foreground="#D4D48A" />
+  <Color name="Number"    foreground="#B5CEA8" />
+
+  <RuleSet>
+
+    <!-- Comments: // line comments and /* block comments */ -->
+    <Span color="Comment">
+      <Begin>//</Begin>
+    </Span>
+    <Span color="Comment" multiline="true">
+      <Begin>/\*</Begin>
+      <End>\*/</End>
+    </Span>
+
+    <!-- String and character literals -->
+    <Span color="String">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+    <Span color="String">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Attributes: [ApiController], [HttpGet], etc. -->
+    <Span color="Attribute">
+      <Begin>\[</Begin>
+      <End>\]</End>
+    </Span>
+
+    <!-- Numeric literals -->
+    <Rule color="Number">
+      \b0[xX][0-9a-fA-F]+\b
+      | \b\d+\.?\d*[fFdDmM]?\b
+    </Rule>
+
+    <!-- Keywords -->
+    <Keywords color="Keyword">
+      <Word>abstract</Word>
+      <Word>as</Word>
+      <Word>async</Word>
+      <Word>await</Word>
+      <Word>base</Word>
+      <Word>bool</Word>
+      <Word>break</Word>
+      <Word>byte</Word>
+      <Word>case</Word>
+      <Word>catch</Word>
+      <Word>char</Word>
+      <Word>checked</Word>
+      <Word>class</Word>
+      <Word>const</Word>
+      <Word>continue</Word>
+      <Word>decimal</Word>
+      <Word>default</Word>
+      <Word>delegate</Word>
+      <Word>do</Word>
+      <Word>double</Word>
+      <Word>else</Word>
+      <Word>enum</Word>
+      <Word>event</Word>
+      <Word>explicit</Word>
+      <Word>extern</Word>
+      <Word>false</Word>
+      <Word>finally</Word>
+      <Word>fixed</Word>
+      <Word>float</Word>
+      <Word>for</Word>
+      <Word>foreach</Word>
+      <Word>get</Word>
+      <Word>goto</Word>
+      <Word>if</Word>
+      <Word>implicit</Word>
+      <Word>in</Word>
+      <Word>init</Word>
+      <Word>int</Word>
+      <Word>interface</Word>
+      <Word>internal</Word>
+      <Word>is</Word>
+      <Word>lock</Word>
+      <Word>long</Word>
+      <Word>namespace</Word>
+      <Word>new</Word>
+      <Word>null</Word>
+      <Word>object</Word>
+      <Word>operator</Word>
+      <Word>out</Word>
+      <Word>override</Word>
+      <Word>params</Word>
+      <Word>private</Word>
+      <Word>protected</Word>
+      <Word>public</Word>
+      <Word>readonly</Word>
+      <Word>record</Word>
+      <Word>ref</Word>
+      <Word>required</Word>
+      <Word>return</Word>
+      <Word>sbyte</Word>
+      <Word>sealed</Word>
+      <Word>set</Word>
+      <Word>short</Word>
+      <Word>sizeof</Word>
+      <Word>stackalloc</Word>
+      <Word>static</Word>
+      <Word>string</Word>
+      <Word>struct</Word>
+      <Word>switch</Word>
+      <Word>this</Word>
+      <Word>throw</Word>
+      <Word>true</Word>
+      <Word>try</Word>
+      <Word>typeof</Word>
+      <Word>uint</Word>
+      <Word>ulong</Word>
+      <Word>unchecked</Word>
+      <Word>unsafe</Word>
+      <Word>ushort</Word>
+      <Word>using</Word>
+      <Word>var</Word>
+      <Word>virtual</Word>
+      <Word>void</Word>
+      <Word>volatile</Word>
+      <Word>while</Word>
+      <Word>yield</Word>
+    </Keywords>
+
+    <!-- Method calls: an identifier immediately followed by "(" -->
+    <Rule color="Method">
+      \b[_a-zA-Z][_a-zA-Z0-9]*(?=\()
+    </Rule>
+
+    <!-- Types: heuristic PascalCase identifiers (not semantic — Roslyn's
+         real classification replaces this once wired in, per Phase 1 item 3
+         in docs/ROADMAP.md). Good enough approximation for now. -->
+    <Rule color="Type">
+      \b[A-Z][_a-zA-Z0-9]*\b
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

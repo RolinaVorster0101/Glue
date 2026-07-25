@@ -1,10 +1,13 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using System.Xml;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using AvaloniaEdit.Highlighting;
+using AvaloniaEdit.Highlighting.Xshd;
 
 namespace Glue;
 
@@ -16,15 +19,30 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Wire up C# syntax highlighting out of the box.
-        // AvaloniaEdit ships built-in definitions for common languages by file extension;
-        // in later phases this gets replaced/augmented by Roslyn's own classification
-        // for C# specifically, and by LSP semantic tokens for Go/C++/TS/CSS/Python.
-        Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".cs");
+        // Load our own C# highlighting (docs/STYLEGUIDE.md palette) instead of
+        // AvaloniaEdit's built-in default theme, and register it under ".cs"
+        // so any .cs file opened later picks it up automatically too.
+        var glueCSharpHighlighting = LoadGlueSyntaxHighlighting();
+        HighlightingManager.Instance.RegisterHighlighting(
+            "Glue C#", new[] { ".cs" }, glueCSharpHighlighting);
+
+        Editor.SyntaxHighlighting = glueCSharpHighlighting;
 
         // Seed content so the window isn't empty on first run.
         Editor.Text = SampleFile.Content;
         UpdateStatus("Untitled.cs (sample — not saved)");
+    }
+
+    /// <summary>
+    /// Reads Styles/GlueCSharp.xshd (packaged as an Avalonia resource, see
+    /// Glue.csproj) and compiles it into an AvaloniaEdit highlighting definition.
+    /// </summary>
+    private static IHighlightingDefinition LoadGlueSyntaxHighlighting()
+    {
+        var uri = new Uri("avares://Glue/Styles/GlueCSharp.xshd");
+        using var stream = AssetLoader.Open(uri);
+        using var reader = XmlReader.Create(stream);
+        return HighlightingLoader.Load(reader, HighlightingManager.Instance);
     }
 
     private async void OnOpenClicked(object? sender, RoutedEventArgs e)
@@ -48,8 +66,10 @@ public partial class MainWindow : Window
         _currentFilePath = file.Path.LocalPath;
         Editor.Text = text;
 
-        // Re-pick syntax highlighting based on the opened file's actual extension,
-        // rather than assuming C# — this is the seed of true multi-language support.
+        // Re-pick syntax highlighting based on the opened file's actual extension.
+        // ".cs" now resolves to our custom Glue definition (registered above);
+        // anything else still falls back to AvaloniaEdit's built-in definitions
+        // until Phase 5 wires in LSP-backed highlighting per language.
         var ext = Path.GetExtension(_currentFilePath);
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(ext);
 
