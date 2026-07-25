@@ -10,6 +10,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using AvaloniaEdit.Folding;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
 using Glue.Services;
@@ -20,10 +21,11 @@ namespace Glue;
 public partial class MainWindow : Window
 {
     private string? _currentFilePath;
+    private FoldingManager? _foldingManager;
 
-    // Debounce timer: re-analyze ~500ms after the user stops typing,
-    // rather than on every keystroke (which would be wasteful and laggy).
-    private readonly DispatcherTimer _diagnosticsDebounceTimer;
+    // Debounce timer: re-analyze (diagnostics + folding) ~500ms after the
+    // user stops typing, rather than on every keystroke.
+    private readonly DispatcherTimer _reanalysisDebounceTimer;
 
     public MainWindow()
     {
@@ -38,26 +40,30 @@ public partial class MainWindow : Window
 
         Editor.SyntaxHighlighting = glueCSharpHighlighting;
 
-        _diagnosticsDebounceTimer = new DispatcherTimer
+        _foldingManager = FoldingManager.Install(Editor.TextArea);
+
+        _reanalysisDebounceTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
         };
-        _diagnosticsDebounceTimer.Tick += (_, _) =>
+        _reanalysisDebounceTimer.Tick += (_, _) =>
         {
-            _diagnosticsDebounceTimer.Stop();
-            RunDiagnostics();
+            _reanalysisDebounceTimer.Stop();
+            ReanalyzeCurrentFile(restoreFoldState: false);
         };
 
         Editor.TextChanged += (_, _) =>
         {
-            _diagnosticsDebounceTimer.Stop();
-            _diagnosticsDebounceTimer.Start();
+            _reanalysisDebounceTimer.Stop();
+            _reanalysisDebounceTimer.Start();
         };
+
+        Closing += (_, _) => SaveFoldStateForCurrentFile();
 
         // Seed content so the window isn't empty on first run.
         Editor.Text = SampleFile.Content;
         UpdateStatus("Untitled.cs (sample — not saved)");
-        RunDiagnostics();
+        ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
     /// <summary>
@@ -75,14 +81,58 @@ public partial class MainWindow : Window
     /// <summary>
     /// Runs Roslyn analysis on the current editor text (single-file only —
     /// see the note in Services/RoslynDiagnosticsService.cs) and refreshes
-    /// the Problems panel.
+    /// both the Problems panel and the folding regions.
     /// </summary>
-    private void RunDiagnostics()
+    /// <param name="restoreFoldState">
+    /// True right after opening a file (apply previously saved collapsed
+    /// regions); false on ordinary typing (keep whatever fold state the
+    /// user currently has, just recompute the regions themselves).
+    /// </param>
+    private void ReanalyzeCurrentFile(bool restoreFoldState)
     {
         var results = RoslynDiagnosticsService.Analyze(Editor.Text, _currentFilePath);
-
         ProblemsList.ItemsSource = results.Select(ToDisplayItem).ToList();
         ProblemsHeader.Text = $"Problems ({results.Count})";
+
+        if (_foldingManager is null) return;
+
+        var newFoldings = RoslynFoldingService.ComputeFoldings(Editor.Text);
+        _foldingManager.UpdateFoldings(newFoldings, -1);
+
+        if (restoreFoldState && _currentFilePath is not null)
+        {
+            var collapsedOffsets = FoldStateStore.GetCollapsedOffsets(_currentFilePath).ToHashSet();
+            foreach (var section in _foldingManager.AllFoldings)
+            {
+                if (collapsedOffsets.Contains(section.StartOffset))
+                {
+                    section.IsFolded = true;
+                }
+            }
+        }
+    }
+
+    private void SaveFoldStateForCurrentFile()
+    {
+        if (_foldingManager is null || _currentFilePath is null) return;
+
+        var collapsedOffsets = _foldingManager.AllFoldings
+            .Where(f => f.IsFolded)
+            .Select(f => f.StartOffset);
+
+        FoldStateStore.SetCollapsedOffsets(_currentFilePath, collapsedOffsets);
+    }
+
+    private void OnExpandAllClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_foldingManager is null) return;
+        foreach (var section in _foldingManager.AllFoldings) section.IsFolded = false;
+    }
+
+    private void OnCollapseAllClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_foldingManager is null) return;
+        foreach (var section in _foldingManager.AllFoldings) section.IsFolded = true;
     }
 
     private DiagnosticDisplayItem ToDisplayItem(DiagnosticItem d) => new()
@@ -137,6 +187,9 @@ public partial class MainWindow : Window
 
         if (files.Count == 0) return;
 
+        // Save fold state for whatever was open before switching away from it.
+        SaveFoldStateForCurrentFile();
+
         var file = files[0];
         await using var stream = await file.OpenReadAsync();
         using var reader = new StreamReader(stream);
@@ -153,7 +206,7 @@ public partial class MainWindow : Window
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(ext);
 
         UpdateStatus(_currentFilePath);
-        RunDiagnostics();
+        ReanalyzeCurrentFile(restoreFoldState: true);
     }
 
     private async void OnSaveClicked(object? sender, RoutedEventArgs e)
@@ -175,11 +228,15 @@ public partial class MainWindow : Window
 
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
         UpdateStatus(_currentFilePath);
-        RunDiagnostics();
+        ReanalyzeCurrentFile(restoreFoldState: false);
+        SaveFoldStateForCurrentFile();
     }
 
     private void OnExitClicked(object? sender, RoutedEventArgs e)
     {
+        // Environment.Exit bypasses the window's Closing event entirely,
+        // so fold state has to be saved explicitly here too.
+        SaveFoldStateForCurrentFile();
         Environment.Exit(0);
     }
 

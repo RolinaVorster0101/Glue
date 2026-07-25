@@ -19,6 +19,10 @@
                 <Separator />
                 <MenuItem Header="E_xit" Click="OnExitClicked" />
             </MenuItem>
+            <MenuItem Header="_View" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="_Expand All" Click="OnExpandAllClicked" />
+                <MenuItem Header="_Collapse All" Click="OnCollapseAllClicked" />
+            </MenuItem>
         </Menu>
 
         <!-- Status bar: per the style guide, this is the one place a solid
