@@ -28,6 +28,7 @@ public class RoslynProjectService
     private MSBuildWorkspace? _workspace;
 
     public Project? CurrentProject { get; private set; }
+    public string? CsprojPath { get; private set; }
 
     public async Task<Project?> OpenProjectAsync(string csprojPath)
     {
@@ -41,6 +42,7 @@ public class RoslynProjectService
         _workspace.WorkspaceFailed += (_, _) => { };
 
         CurrentProject = await _workspace.OpenProjectAsync(csprojPath);
+        CsprojPath = csprojPath;
         return CurrentProject;
     }
 

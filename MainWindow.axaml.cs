@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using Avalonia.Controls;
@@ -31,6 +32,7 @@ public partial class MainWindow : Window
     private SearchPanel? _searchPanel;
     private CompletionWindow? _completionWindow;
     private readonly RoslynProjectService _projectService = new();
+    private CancellationTokenSource? _runCancellation;
 
     // Debounce timer: re-analyze (diagnostics + folding) ~500ms after the
     // user stops typing, rather than on every keystroke.
@@ -79,7 +81,11 @@ public partial class MainWindow : Window
             _reanalysisDebounceTimer.Start();
         };
 
-        Closing += (_, _) => SaveFoldStateForCurrentFile();
+        Closing += (_, _) =>
+        {
+            SaveFoldStateForCurrentFile();
+            _runCancellation?.Cancel();
+        };
 
         // Seed content so the window isn't empty on first run.
         Editor.Text = SampleFile.Content;
@@ -252,7 +258,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
-            case Avalonia.Input.Key.B when ctrl:
+            case Avalonia.Input.Key.B when ctrl && !shift:
                 ToggleSidebar();
                 e.Handled = true;
                 break;
@@ -264,6 +270,16 @@ public partial class MainWindow : Window
 
             case Avalonia.Input.Key.Space when ctrl:
                 TriggerCompletion();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.B when ctrl && shift:
+                OnBuildProjectClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.F5 when ctrl:
+                OnRunProjectClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
         }
@@ -407,6 +423,85 @@ public partial class MainWindow : Window
             UpdateStatus($"Project load failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Runs the real `dotnet build` toolchain against the currently loaded
+    /// project (see Services/BuildService.cs) and streams its output live
+    /// into the Output tab, switching to it automatically so the build is
+    /// visible without an extra click. Requires a project to have been
+    /// loaded via File > Open Project first.
+    /// </summary>
+    private async void OnBuildProjectClicked(object? sender, RoutedEventArgs e)
+    {
+        var csprojPath = _projectService.CsprojPath;
+        if (csprojPath is null)
+        {
+            UpdateStatus("Build: no project loaded — use File > Open Project first");
+            return;
+        }
+
+        OutputText.Text = "";
+        BottomPanelTabs.SelectedIndex = 1; // switch to the Output tab
+        UpdateStatus("Building...");
+
+        var result = await BuildService.BuildAsync(csprojPath, line =>
+        {
+            // BuildService's callback fires on the process's own background
+            // thread — UI updates have to be marshalled back onto the UI
+            // thread via the dispatcher, or Avalonia will throw.
+            Dispatcher.UIThread.Post(() =>
+            {
+                OutputText.Text += line + "\n";
+                OutputScrollViewer.ScrollToEnd();
+            });
+        });
+
+        UpdateStatus(result.Success ? "Build succeeded" : "Build failed");
+    }
+
+    /// <summary>
+    /// Runs `dotnet run` (Services/RunService.cs) against the currently
+    /// loaded project — rebuilds if needed, then launches the compiled app,
+    /// streaming its console output live into the Output tab. Cancels any
+    /// previous run first, so clicking Run again while something's already
+    /// running restarts it rather than piling up processes.
+    /// </summary>
+    private async void OnRunProjectClicked(object? sender, RoutedEventArgs e)
+    {
+        var csprojPath = _projectService.CsprojPath;
+        if (csprojPath is null)
+        {
+            UpdateStatus("Run: no project loaded — use File > Open Project first");
+            return;
+        }
+
+        _runCancellation?.Cancel();
+        _runCancellation = new CancellationTokenSource();
+
+        OutputText.Text += "\n--- Running ---\n";
+        BottomPanelTabs.SelectedIndex = 1;
+        UpdateStatus("Running...");
+
+        try
+        {
+            var result = await RunService.RunAsync(csprojPath, line =>
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    OutputText.Text += line + "\n";
+                    OutputScrollViewer.ScrollToEnd();
+                });
+            }, _runCancellation.Token);
+
+            UpdateStatus($"Process exited with code {result.ExitCode}");
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateStatus("Run stopped");
+        }
+    }
+
+    private void OnStopRunClicked(object? sender, RoutedEventArgs e) => _runCancellation?.Cancel();
 
     /// <summary>
     /// PART_ExpandCollapseChevronContainer's 12,0,12,0 margin is set directly
