@@ -38,6 +38,10 @@
     <!-- Roslyn — hosted in-process for C# diagnostics/completion/formatting/folding -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    <!-- CompletionService lives here, not in the packages above — needed for
+         basic completion (Phase 1 item 3). -->
+    <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.11.0" />
   </ItemGroup>
 
 </Project>

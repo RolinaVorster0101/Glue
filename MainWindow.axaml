@@ -45,6 +45,8 @@
                 <MenuItem Header="_Duplicate Line" InputGesture="Ctrl+D" Click="OnDuplicateLineClicked" />
                 <MenuItem Header="Toggle Line _Comment (Ctrl+/)" Click="OnToggleCommentClicked" />
                 <Separator />
+                <MenuItem Header="_Trigger Suggestion (Ctrl+Space)" Click="OnTriggerCompletionClicked" />
+                <Separator />
                 <!-- Ctrl+Alt+F is a placeholder single-key shortcut. A real VS-style
                      chord (Ctrl+K, Ctrl+D) needs proper keybinding infrastructure,
                      which arrives with the Command Palette / Settings work later

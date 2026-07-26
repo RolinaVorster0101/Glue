@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -24,8 +22,6 @@ public record DiagnosticItem(DiagnosticSeverity Severity, string Message, int Li
 /// </summary>
 public static class RoslynDiagnosticsService
 {
-    private static readonly Lazy<List<MetadataReference>> SystemReferences = new(LoadSystemReferences);
-
     public static IReadOnlyList<DiagnosticItem> Analyze(string sourceText, string? filePath)
     {
         var tree = CSharpSyntaxTree.ParseText(sourceText, path: filePath ?? "Untitled.cs");
@@ -33,7 +29,7 @@ public static class RoslynDiagnosticsService
         var compilation = CSharpCompilation.Create(
             assemblyName: "GlueLiveAnalysis",
             syntaxTrees: new[] { tree },
-            references: SystemReferences.Value,
+            references: RoslynReferences.System,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var diagnostics = compilation.GetDiagnostics();
@@ -50,23 +46,6 @@ public static class RoslynDiagnosticsService
             })
             .OrderByDescending(d => d.Severity)
             .ThenBy(d => d.Line)
-            .ToList();
-    }
-
-    /// <summary>
-    /// Gathers reference assemblies for the currently running .NET runtime,
-    /// so a standalone snippet can at least resolve System.* types without
-    /// needing a real project/csproj context.
-    /// </summary>
-    private static List<MetadataReference> LoadSystemReferences()
-    {
-        var trustedAssembliesPaths =
-            ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty)
-            .Split(Path.PathSeparator);
-
-        return trustedAssembliesPaths
-            .Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p))
-            .Select(p => (MetadataReference)MetadataReference.CreateFromFile(p))
             .ToList();
     }
 }

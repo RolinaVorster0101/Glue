@@ -11,6 +11,9 @@ using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using AvaloniaEdit.Folding;
+using AvaloniaEdit.CodeCompletion;
+using AvaloniaEdit.Document;
+using AvaloniaEdit.Editing;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
 using AvaloniaEdit.Search;
@@ -26,6 +29,7 @@ public partial class MainWindow : Window
     private string? _currentFilePath;
     private FoldingManager? _foldingManager;
     private SearchPanel? _searchPanel;
+    private CompletionWindow? _completionWindow;
 
     // Debounce timer: re-analyze (diagnostics + folding) ~500ms after the
     // user stops typing, rather than on every keystroke.
@@ -242,6 +246,11 @@ public partial class MainWindow : Window
 
             case Avalonia.Input.Key.J when ctrl:
                 TogglePanel();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.Space when ctrl:
+                TriggerCompletion();
                 e.Handled = true;
                 break;
         }
@@ -477,6 +486,8 @@ public partial class MainWindow : Window
 
     private void OnToggleCommentClicked(object? sender, RoutedEventArgs e) => ToggleLineComment();
 
+    private void OnTriggerCompletionClicked(object? sender, RoutedEventArgs e) => TriggerCompletion();
+
     private void OnToggleSidebarClicked(object? sender, RoutedEventArgs e) => ToggleSidebar();
 
     private void OnTogglePanelClicked(object? sender, RoutedEventArgs e) => TogglePanel();
@@ -593,6 +604,62 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Requests completion suggestions from Roslyn (Services/RoslynCompletionService.cs)
+    /// for the current caret position, and shows them in AvaloniaEdit's built-in
+    /// CompletionWindow. Manual trigger (Ctrl+Space) only for this first pass —
+    /// auto-triggering on every typed character (e.g. after ".") is a
+    /// reasonable follow-up, not attempted here to keep this step well-scoped.
+    /// C#-only, same as the rest of the Roslyn-backed features at this stage.
+    /// </summary>
+    private async void TriggerCompletion()
+    {
+        if (!IsCSharpFile)
+        {
+            UpdateStatus("Completion: skipped — not treated as a C# file (IsCSharpFile was false)");
+            return;
+        }
+
+        try
+        {
+            var caretOffset = Editor.CaretOffset;
+
+            var wordStart = caretOffset;
+            while (wordStart > 0 && char.IsLetterOrDigit(Editor.Text[wordStart - 1]))
+            {
+                wordStart--;
+            }
+            var typedPrefix = Editor.Text.Substring(wordStart, caretOffset - wordStart);
+
+            // Prefix is now passed INTO the service and applied before the
+            // 50-item cap — see the comment in RoslynCompletionService for
+            // why filtering had to move there, not stay here.
+            var suggestions = await RoslynCompletionService.GetCompletionsAsync(
+                Editor.Text, caretOffset, typedPrefix);
+
+            if (suggestions.Count == 0) return;
+
+            _completionWindow = new CompletionWindow(Editor.TextArea);
+            _completionWindow.StartOffset = wordStart;
+
+            var data = _completionWindow.CompletionList.CompletionData;
+            foreach (var suggestion in suggestions)
+            {
+                data.Add(new GlueCompletionData(suggestion.DisplayText, suggestion.Description));
+            }
+
+            _completionWindow.Show();
+            _completionWindow.Closed += (_, _) => _completionWindow = null;
+        }
+        catch (Exception ex)
+        {
+            // async void swallows exceptions silently by default — surfacing
+            // this explicitly so a real failure doesn't look identical to
+            // "zero suggestions found".
+            UpdateStatus($"Completion error: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     private void OnExitClicked(object? sender, RoutedEventArgs e)
     {
         // Environment.Exit bypasses the window's Closing event entirely,
@@ -619,6 +686,34 @@ internal class DiagnosticDisplayItem
     public string Message { get; init; } = "";
     public string LineLabel { get; init; } = "";
     public int Line { get; init; }
+}
+
+/// <summary>
+/// Wraps a CompletionSuggestion (Services/RoslynCompletionService.cs) to
+/// satisfy AvaloniaEdit's ICompletionData, so the CompletionWindow can
+/// display and insert it. Written blind against AvaloniaEdit's API surface
+/// (no local build/run environment) — the interface shape is inferred from
+/// the upstream AvalonEdit API it was ported from, so double-check against
+/// any build errors rather than assuming this is exactly right on the first try.
+/// </summary>
+internal class GlueCompletionData : ICompletionData
+{
+    public GlueCompletionData(string text, string? description)
+    {
+        Text = text;
+        Description = string.IsNullOrWhiteSpace(description) ? Text : description;
+    }
+
+    public IImage? Image => null;
+    public string Text { get; }
+    public object Content => Text;
+    public object Description { get; }
+    public double Priority => 0;
+
+    public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+    {
+        textArea.Document.Replace(completionSegment, Text);
+    }
 }
 
 /// <summary>
