@@ -1257,7 +1257,16 @@ public partial class MainWindow : Window
 
         UpdateStatus(
             $"Renamed '{symbol.Name}' to '{newName}' — {result.ChangedFiles.Count} file(s) changed, " +
-            "not yet saved (use Save All)");
+            "not yet saved (use Save All) — see Output tab for the full file list");
+
+        // The confirm dialog and status bar message are both fleeting —
+        // logging the actual paths here gives a persistent, scrollable
+        // record of exactly what changed, which was missing before.
+        OutputText.Text +=
+            $"\n--- Rename: '{symbol.Name}' → '{newName}' ---\n" +
+            string.Join("\n", result.ChangedFiles.Keys) +
+            "\n";
+        OutputScrollViewer.ScrollToEnd();
 
         await ReanalyzeCurrentFile(restoreFoldState: false);
     }

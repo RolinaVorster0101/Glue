@@ -12,7 +12,7 @@
         <TextBox x:Name="NameBox" KeyDown="OnNameBoxKeyDown" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
             <Button Content="Cancel" Click="OnCancelClicked" />
-            <Button Content="Rename" Click="OnRenameClicked" />
+            <Button Content="Replace All" Click="OnRenameClicked" />
         </StackPanel>
     </StackPanel>
 
