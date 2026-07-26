@@ -70,7 +70,7 @@ public partial class MainWindow : Window
         _reanalysisDebounceTimer.Tick += (_, _) =>
         {
             _reanalysisDebounceTimer.Stop();
-            ReanalyzeCurrentFile(restoreFoldState: false);
+            _ = ReanalyzeCurrentFile(restoreFoldState: false);
         };
 
         Editor.TextChanged += (_, _) =>
@@ -84,7 +84,7 @@ public partial class MainWindow : Window
         // Seed content so the window isn't empty on first run.
         Editor.Text = SampleFile.Content;
         UpdateStatus("Untitled.cs (sample — not saved)");
-        ReanalyzeCurrentFile(restoreFoldState: false);
+        _ = ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
     /// <summary>
@@ -113,17 +113,22 @@ public partial class MainWindow : Window
         string.Equals(Path.GetExtension(_currentFilePath), ".cs", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Runs Roslyn analysis on the current editor text (single-file only —
-    /// see the note in Services/RoslynDiagnosticsService.cs) and refreshes
-    /// both the Problems panel and the folding regions. No-ops (and clears
-    /// both panels) for anything that isn't a C# file — see IsCSharpFile.
+    /// Runs Roslyn analysis on the current editor text and refreshes both the
+    /// Problems panel and the folding regions. No-ops (and clears both
+    /// panels) for anything that isn't a C# file — see IsCSharpFile.
+    ///
+    /// Uses TRUE project-aware analysis (RoslynDiagnosticsService.
+    /// AnalyzeProjectDocumentAsync) when the current file is part of a
+    /// project loaded via File > Open Project — falls back to single-file
+    /// analysis (RoslynDiagnosticsService.Analyze) otherwise, e.g. before any
+    /// project has been loaded, or for a file outside the loaded one.
     /// </summary>
     /// <param name="restoreFoldState">
     /// True right after opening a file (apply previously saved collapsed
     /// regions); false on ordinary typing (keep whatever fold state the
     /// user currently has, just recompute the regions themselves).
     /// </param>
-    private void ReanalyzeCurrentFile(bool restoreFoldState)
+    private async Task ReanalyzeCurrentFile(bool restoreFoldState)
     {
         if (!IsCSharpFile)
         {
@@ -133,7 +138,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        var results = RoslynDiagnosticsService.Analyze(Editor.Text, _currentFilePath);
+        var projectDocument = _currentFilePath is not null
+            ? _projectService.FindDocument(_currentFilePath)
+            : null;
+
+        var results = projectDocument is not null
+            ? await RoslynDiagnosticsService.AnalyzeProjectDocumentAsync(projectDocument, Editor.Text)
+            : RoslynDiagnosticsService.Analyze(Editor.Text, _currentFilePath);
+
         ProblemsList.ItemsSource = results.Select(ToDisplayItem).ToList();
         ProblemsHeader.Text = $"Problems ({results.Count})";
 
@@ -178,7 +190,7 @@ public partial class MainWindow : Window
         foreach (var section in _foldingManager.AllFoldings) section.IsFolded = true;
     }
 
-    private void OnFormatDocumentClicked(object? sender, RoutedEventArgs e) => FormatDocument();
+    private async void OnFormatDocumentClicked(object? sender, RoutedEventArgs e) => await FormatDocument();
 
     /// <summary>
     /// Handles keyboard shortcuts that AvaloniaEdit doesn't already provide
@@ -201,12 +213,12 @@ public partial class MainWindow : Window
         switch (e.Key)
         {
             case Avalonia.Input.Key.F when ctrl && alt:
-                FormatDocument();
+                _ = FormatDocument();
                 e.Handled = true;
                 break;
 
             case Avalonia.Input.Key.N when ctrl:
-                NewFile();
+                _ = NewFile();
                 e.Handled = true;
                 break;
 
@@ -268,7 +280,7 @@ public partial class MainWindow : Window
     /// user had manually collapsed before formatting will re-expand. That's
     /// an acceptable tradeoff for now, not something silently broken.
     /// </summary>
-    private void FormatDocument()
+    private async Task FormatDocument()
     {
         if (!IsCSharpFile) return;
 
@@ -277,7 +289,7 @@ public partial class MainWindow : Window
         Editor.Text = RoslynFormattingService.Format(Editor.Text);
 
         Editor.CaretOffset = Math.Min(caretOffset, Editor.Text.Length);
-        ReanalyzeCurrentFile(restoreFoldState: false);
+        await ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
     private DiagnosticDisplayItem ToDisplayItem(DiagnosticItem d) => new()
@@ -341,12 +353,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// First testable milestone for true project parsing (Phase 1 item 2) —
-    /// loads a .csproj via MSBuildWorkspace and reports success/failure via
-    /// the status bar. Deliberately NOT yet wired into diagnostics or
-    /// completion — that's the next step once this is confirmed working.
-    /// MSBuild integration has a real track record of assembly-loading
-    /// quirks, worth isolating and testing on its own first.
+    /// Loads a .csproj via MSBuildWorkspace for true, cross-file-aware
+    /// Roslyn analysis (Phase 1 item 2), AND populates the Explorer sidebar
+    /// with the project's containing folder — these were previously two
+    /// disconnected actions (loading a project didn't touch the file tree
+    /// at all), which was a real gap: the status bar would confirm the
+    /// project loaded, but the Explorer sidebar stayed empty.
     /// </summary>
     private async void OnOpenProjectClicked(object? sender, RoutedEventArgs e)
     {
@@ -365,13 +377,30 @@ public partial class MainWindow : Window
 
         if (files.Count == 0) return;
 
+        var csprojPath = files[0].Path.LocalPath;
         UpdateStatus("Loading project...");
 
         try
         {
-            var project = await _projectService.OpenProjectAsync(files[0].Path.LocalPath);
+            var project = await _projectService.OpenProjectAsync(csprojPath);
             var docCount = project?.Documents.Count() ?? 0;
+
+            // Populate the Explorer sidebar with the project's containing
+            // folder — same tree-building logic as File > Open Folder,
+            // reused here rather than duplicated.
+            var projectFolder = Path.GetDirectoryName(csprojPath);
+            if (projectFolder is not null)
+            {
+                var rootNode = ProjectTreeBuilder.Build(projectFolder);
+                ExplorerTree.ItemsSource = new[] { rootNode };
+            }
+
             UpdateStatus($"Project loaded: {project?.Name} ({docCount} file(s))");
+
+            // If a file was already open when the project loaded, and it
+            // turns out to be part of this project, re-analyze immediately
+            // rather than waiting for the next edit/debounce tick.
+            await ReanalyzeCurrentFile(restoreFoldState: false);
         }
         catch (Exception ex)
         {
@@ -435,7 +464,7 @@ public partial class MainWindow : Window
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(ext);
 
         UpdateStatus(_currentFilePath);
-        ReanalyzeCurrentFile(restoreFoldState: true);
+        await ReanalyzeCurrentFile(restoreFoldState: true);
     }
 
     private async void OnOpenClicked(object? sender, RoutedEventArgs e)
@@ -460,7 +489,7 @@ public partial class MainWindow : Window
 
     private async void OnSaveAllClicked(object? sender, RoutedEventArgs e) => await SaveAsync();
 
-    private async void OnNewFileClicked(object? sender, RoutedEventArgs e) => NewFile();
+    private async void OnNewFileClicked(object? sender, RoutedEventArgs e) => await NewFile();
 
     /// <summary>
     /// Prompts to save if there's no current file path yet, otherwise saves
@@ -477,7 +506,7 @@ public partial class MainWindow : Window
 
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
         UpdateStatus(_currentFilePath);
-        ReanalyzeCurrentFile(restoreFoldState: false);
+        await ReanalyzeCurrentFile(restoreFoldState: false);
         SaveFoldStateForCurrentFile();
     }
 
@@ -498,18 +527,18 @@ public partial class MainWindow : Window
         _currentFilePath = file.Path.LocalPath;
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
         UpdateStatus(_currentFilePath);
-        ReanalyzeCurrentFile(restoreFoldState: false);
+        await ReanalyzeCurrentFile(restoreFoldState: false);
         SaveFoldStateForCurrentFile();
     }
 
-    private void NewFile()
+    private async Task NewFile()
     {
         SaveFoldStateForCurrentFile();
         _currentFilePath = null;
         Editor.Text = string.Empty;
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".cs");
         UpdateStatus("Untitled.cs (unsaved)");
-        ReanalyzeCurrentFile(restoreFoldState: false);
+        await ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
     private void OnUndoClicked(object? sender, RoutedEventArgs e) => Editor.Undo();
@@ -671,11 +700,19 @@ public partial class MainWindow : Window
             }
             var typedPrefix = Editor.Text.Substring(wordStart, caretOffset - wordStart);
 
-            // Prefix is now passed INTO the service and applied before the
-            // 50-item cap — see the comment in RoslynCompletionService for
-            // why filtering had to move there, not stay here.
-            var suggestions = await RoslynCompletionService.GetCompletionsAsync(
-                Editor.Text, caretOffset, typedPrefix);
+            // True project-aware completion (sees the loaded project's other
+            // files' types/members) when this file is part of a project
+            // loaded via File > Open Project; falls back to single-file
+            // completion otherwise — same pattern as ReanalyzeCurrentFile.
+            var projectDocument = _currentFilePath is not null
+                ? _projectService.FindDocument(_currentFilePath)
+                : null;
+
+            var suggestions = projectDocument is not null
+                ? await RoslynCompletionService.GetCompletionsForDocumentAsync(
+                    projectDocument, Editor.Text, caretOffset, typedPrefix)
+                : await RoslynCompletionService.GetCompletionsAsync(
+                    Editor.Text, caretOffset, typedPrefix);
 
             if (suggestions.Count == 0) return;
 

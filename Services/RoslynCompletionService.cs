@@ -44,18 +44,43 @@ public static class RoslynCompletionService
         if (completionService is null) return Array.Empty<CompletionSuggestion>();
 
         var results = await completionService.GetCompletionsAsync(document, caretOffset);
+        return ToSuggestions(results, filterPrefix);
+    }
+
+    /// <summary>
+    /// True project-aware completion: uses the real Document for this file
+    /// from the loaded project (see RoslynProjectService.FindDocument), so
+    /// suggestions include the project's other files' types/members, not
+    /// just this one file plus System.* in isolation.
+    ///
+    /// currentText is applied via WithText() for the same reason as
+    /// RoslynDiagnosticsService.AnalyzeProjectDocumentAsync — the loaded
+    /// Document doesn't automatically reflect unsaved live edits.
+    /// </summary>
+    public static async Task<IReadOnlyList<CompletionSuggestion>> GetCompletionsForDocumentAsync(
+        Document document, string currentText, int caretOffset, string? filterPrefix = null)
+    {
+        var updatedDocument = document.WithText(SourceText.From(currentText));
+
+        var completionService = CompletionService.GetService(updatedDocument);
+        if (completionService is null) return Array.Empty<CompletionSuggestion>();
+
+        var results = await completionService.GetCompletionsAsync(updatedDocument, caretOffset);
+        return ToSuggestions(results, filterPrefix);
+    }
+
+    private static IReadOnlyList<CompletionSuggestion> ToSuggestions(
+        CompletionList? results, string? filterPrefix)
+    {
         if (results is null) return Array.Empty<CompletionSuggestion>();
 
         IEnumerable<CompletionItem> items = results.ItemsList;
 
         // Filter by whatever's already typed BEFORE capping the list size —
-        // this was a real bug: capping first, alphabetically, before
-        // filtering meant anything not sorting into the first ~50 raw
-        // results (out of hundreds/thousands of in-scope System.* symbols)
-        // was discarded before it ever got a chance to match the typed
-        // prefix. Confirmed via diagnostic logging: "50 raw, 0 matching
-        // prefix 'Gre'" even though Greeter/Greet are defined in the very
-        // file being edited.
+        // capping first, alphabetically, before filtering was a real bug:
+        // anything not sorting into the first ~50 raw results (out of
+        // hundreds/thousands of in-scope symbols) got discarded before it
+        // ever had a chance to match the typed prefix.
         if (!string.IsNullOrEmpty(filterPrefix))
         {
             items = items.Where(i =>
