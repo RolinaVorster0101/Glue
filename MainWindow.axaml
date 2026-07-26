@@ -102,6 +102,39 @@
                 <TreeView x:Name="ExplorerTree"
                           Background="Transparent"
                           SelectionChanged="OnExplorerSelectionChanged">
+                    <!-- Found via Avalonia DevTools (F12): the actual expander
+                         element is PART_ExpandCollapseChevron, a ToggleButton.
+                         Targeting it precisely this time, rather than guessing. -->
+                    <TreeView.Styles>
+                        <Style Selector="TreeViewItem /template/ ToggleButton#PART_ExpandCollapseChevron">
+                            <Setter Property="Width" Value="11" />
+                            <Setter Property="Height" Value="11" />
+                            <!-- Numerically centered already (confirmed via DevTools),
+                                 but the triangle glyph itself sits slightly high within
+                                 its own bounding box — this small top nudge compensates
+                                 for that visually, by eye rather than by measurement. -->
+                            <Setter Property="Margin" Value="0,3,0,0" />
+                            <Setter Property="VerticalAlignment" Value="Center" />
+                            <Setter Property="HorizontalAlignment" Value="Center" />
+                            <Setter Property="RenderTransform" Value="scale(0.8)" />
+                            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+                        </Style>
+                        <!-- Chevron SHAPE (making it a narrower arrow instead of a wide
+                             rectangle) was attempted several ways — targeted XAML style
+                             on Path#ChevronPath, pseudo-class-scoped variants, and a
+                             code-behind approach — none reliably worked for both the
+                             collapsed and expanded states at once. Parked for a later
+                             UI-polish pass (docs/ROADMAP.md, Phase 6) rather than keep
+                             sinking time into a purely cosmetic detail. Current state:
+                             correctly sized (11x11) and centered, just not narrowed. -->
+                        <!-- PART_ExpandCollapseChevronContainer's 12,0,12,0 margin is
+                             set directly in Avalonia's built-in template markup, which
+                             sits at a higher style priority than anything we can set
+                             here via a Style selector — confirmed via DevTools (Bounds
+                             stayed at the template's X=12 regardless of what we set
+                             here). That margin gets fixed from code-behind instead;
+                             see AdjustChevronContainerMargins() in MainWindow.axaml.cs. -->
+                    </TreeView.Styles>
                     <TreeView.ItemTemplate>
                         <TreeDataTemplate x:DataType="models:FileTreeNode" ItemsSource="{Binding Children}">
                             <TextBlock Text="{Binding Name}"

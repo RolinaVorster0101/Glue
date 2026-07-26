@@ -28,6 +28,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.0" />
+    <!-- DevTools (F12 at runtime): lets us inspect the live visual tree to find
+         exact internal template part names/types, instead of guessing at
+         Fluent theme internals blind. Debug-only — never ships in Release. -->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.0" Condition="'$(Configuration)' == 'Debug'" />
     <!-- Avalonia's port of AvalonEdit — the actual editor-core dependency for our shell.
          Note the package ID is "Avalonia.AvaloniaEdit", not just "AvaloniaEdit". -->
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.2.0" />

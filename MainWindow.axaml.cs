@@ -13,6 +13,7 @@ using Avalonia.Threading;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
+using Avalonia.VisualTree;
 using Glue.Models;
 using Glue.Services;
 using Microsoft.CodeAnalysis;
@@ -42,6 +43,12 @@ public partial class MainWindow : Window
         Editor.SyntaxHighlighting = glueCSharpHighlighting;
 
         _foldingManager = FoldingManager.Install(Editor.TextArea);
+
+        // Fixes a template-priority margin that can't be overridden via XAML
+        // styling alone — see AdjustChevronContainerMargins() for the full
+        // explanation. Runs on every layout pass so newly expanded folders
+        // get the fix applied too.
+        ExplorerTree.LayoutUpdated += (_, _) => AdjustChevronContainerMargins();
 
         _reanalysisDebounceTimer = new DispatcherTimer
         {
@@ -254,6 +261,32 @@ public partial class MainWindow : Window
         // TreeView.ItemsSource expects a collection of roots, even though we
         // only ever have one — a single opened folder.
         ExplorerTree.ItemsSource = new[] { rootNode };
+    }
+
+    /// <summary>
+    /// PART_ExpandCollapseChevronContainer's 12,0,12,0 margin is set directly
+    /// in Avalonia's built-in TreeViewItem template markup, which sits at a
+    /// higher style priority than anything settable via a Style selector in
+    /// our own XAML (confirmed via DevTools — an external Style override was
+    /// visibly ignored, Bounds stayed pinned to the template's own X=12).
+    /// Setting it here, in code, on the live control instance, is "Local"
+    /// priority, which genuinely does outrank the template's value.
+    ///
+    /// Runs on every layout pass so newly-realized containers (e.g. after
+    /// expanding a previously-collapsed folder) get fixed too, not just
+    /// whatever was visible at load time.
+    /// </summary>
+    private void AdjustChevronContainerMargins()
+    {
+        var targetMargin = new Avalonia.Thickness(6, 0, 6, 0);
+
+        foreach (var panel in ExplorerTree.GetVisualDescendants().OfType<Panel>())
+        {
+            if (panel.Name == "PART_ExpandCollapseChevronContainer" && panel.Margin != targetMargin)
+            {
+                panel.Margin = targetMargin;
+            }
+        }
     }
 
     private async void OnExplorerSelectionChanged(object? sender, SelectionChangedEventArgs e)
