@@ -287,6 +287,11 @@ public partial class MainWindow : Window
                 OnGoToDefinitionClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Avalonia.Input.Key.R when ctrl && alt:
+                OnFindAllReferencesClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -900,6 +905,57 @@ public partial class MainWindow : Window
         Editor.TextArea.Caret.BringCaretToView();
     }
 
+    /// <summary>
+    /// Finds every usage of the symbol under the caret across the whole
+    /// loaded project (Services/RoslynNavigationService.cs), and lists them
+    /// in the References tab. Same project-loaded requirement as Go to
+    /// Definition, for the same reason.
+    /// </summary>
+    private async void OnFindAllReferencesClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!IsCSharpFile) return;
+
+        var projectDocument = _currentFilePath is not null
+            ? _projectService.FindDocument(_currentFilePath)
+            : null;
+
+        if (projectDocument is null)
+        {
+            UpdateStatus("Find All References: load a project via File > Open Project first");
+            return;
+        }
+
+        UpdateStatus("Finding references...");
+
+        var references = await RoslynNavigationService.FindReferencesAsync(
+            projectDocument, Editor.Text, Editor.CaretOffset);
+
+        ReferencesList.ItemsSource = references.Select(r => new ReferenceDisplayItem
+        {
+            FileName = Path.GetFileName(r.FilePath),
+            FilePath = r.FilePath,
+            Line = r.Line,
+            LineText = r.LineText
+        }).ToList();
+
+        BottomPanelTabs.SelectedIndex = 2; // References tab
+        UpdateStatus($"Find All References: {references.Count} result(s)");
+    }
+
+    private async void OnReferenceDoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (ReferencesList.SelectedItem is not ReferenceDisplayItem item) return;
+
+        if (!string.Equals(item.FilePath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            await LoadFileIntoEditorAsync(item.FilePath);
+        }
+
+        var lineNumber = Math.Clamp(item.Line, 1, Editor.Document.LineCount);
+        var line = Editor.Document.GetLineByNumber(lineNumber);
+        NavigateEditorTo(line.Offset);
+    }
+
     private void OnExitClicked(object? sender, RoutedEventArgs e)
     {
         // Environment.Exit bypasses the window's Closing event entirely,
@@ -926,6 +982,19 @@ internal class DiagnosticDisplayItem
     public string Message { get; init; } = "";
     public string LineLabel { get; init; } = "";
     public int Line { get; init; }
+}
+
+/// <summary>
+/// UI-friendly wrapper around a ReferenceItem (Services/RoslynNavigationService.cs)
+/// for the References tab's data template.
+/// </summary>
+internal class ReferenceDisplayItem
+{
+    public string FileName { get; init; } = "";
+    public string FilePath { get; init; } = "";
+    public int Line { get; init; }
+    public string LineText { get; init; } = "";
+    public string LineLabel => $"Ln {Line}";
 }
 
 /// <summary>

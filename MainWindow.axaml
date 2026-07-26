@@ -50,6 +50,7 @@
                      cross-file navigation needs actual multiple documents,
                      which single-file analysis doesn't have. -->
                 <MenuItem Header="_Go to Definition (Ctrl+Alt+G)" Click="OnGoToDefinitionClicked" />
+                <MenuItem Header="_Find All References (Ctrl+Alt+R)" Click="OnFindAllReferencesClicked" />
                 <Separator />
                 <MenuItem Header="_Trigger Suggestion (Ctrl+Space)" Click="OnTriggerCompletionClicked" />
                 <Separator />
@@ -143,6 +144,28 @@
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    TextWrapping="NoWrap" />
                     </ScrollViewer>
+                </TabItem>
+                <TabItem Header="References">
+                    <ListBox x:Name="ReferencesList"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             DoubleTapped="OnReferenceDoubleTapped">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:ReferenceDisplayItem">
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,2">
+                                    <TextBlock Text="{Binding FileName}"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               FontSize="12" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding LineLabel}"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               FontSize="11" />
+                                    <TextBlock Text="{Binding LineText}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontSize="12" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </TabItem>
             </TabControl>
         </Border>
