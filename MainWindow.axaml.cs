@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     private CompletionWindow? _completionWindow;
     private readonly RoslynProjectService _projectService = new();
     private CancellationTokenSource? _runCancellation;
+    private readonly TerminalService _terminalService = new();
 
     // Snapshot of what's actually on disk for _currentFilePath (or "" for a
     // new/unsaved file), used to detect unsaved changes in the open editor.
@@ -79,6 +80,20 @@ public partial class MainWindow : Window
         // comment in MainWindow.axaml for the follow-up note on Replace).
         _searchPanel = SearchPanel.Install(Editor);
 
+        // Starts eagerly, alongside everything else — a terminal is expected
+        // to be immediately available, not lazily started on first use.
+        _terminalService.OutputReceived += line =>
+        {
+            // Fires on the process's own background thread — has to be
+            // marshalled back onto the UI thread, same as Build/Run output.
+            Dispatcher.UIThread.Post(() =>
+            {
+                TerminalOutputText.Text += line + "\n";
+                TerminalScrollViewer.ScrollToEnd();
+            });
+        };
+        _terminalService.Start();
+
         // Fixes a template-priority margin that can't be overridden via XAML
         // styling alone — see AdjustChevronContainerMargins() for the full
         // explanation. Runs on every layout pass so newly expanded folders
@@ -102,6 +117,12 @@ public partial class MainWindow : Window
         };
 
         Closing += OnWindowClosing;
+
+        // Closed (not Closing) fires exactly once, only once the window is
+        // actually gone — the right place for final cleanup that shouldn't
+        // be duplicated across Closing's several SaveAll/Discard/Cancel
+        // branches.
+        Closed += (_, _) => _terminalService.Dispose();
 
         // Seed content so the window isn't empty on first run.
         Editor.Text = SampleFile.Content;
@@ -442,6 +463,11 @@ public partial class MainWindow : Window
 
             case Avalonia.Input.Key.M when ctrl && alt:
                 OnExtractMethodClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.OemTilde when ctrl: // Ctrl+`
+                OnFocusTerminalClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
         }
@@ -873,6 +899,33 @@ public partial class MainWindow : Window
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".cs");
         UpdateStatus("Untitled.cs (unsaved)");
         await ReanalyzeCurrentFile(restoreFoldState: false);
+    }
+
+    private void OnFocusTerminalClicked(object? sender, RoutedEventArgs e)
+    {
+        BottomPanelTabs.SelectedIndex = 3; // Terminal tab
+        TerminalInput.Focus();
+    }
+
+    /// <summary>
+    /// Enter sends the typed command to the terminal (Services/TerminalService.cs).
+    /// The command is echoed into the output area first, since PowerShell
+    /// reading from redirected stdin — no real pty attached — doesn't echo
+    /// typed input back on its own the way an actual terminal window would.
+    /// </summary>
+    private void OnTerminalInputKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key != Avalonia.Input.Key.Enter) return;
+
+        var command = TerminalInput.Text ?? "";
+        if (string.IsNullOrWhiteSpace(command)) return;
+
+        TerminalOutputText.Text += $"> {command}\n";
+        TerminalScrollViewer.ScrollToEnd();
+
+        _terminalService.SendCommand(command);
+        TerminalInput.Text = "";
+        e.Handled = true;
     }
 
     private void OnUndoClicked(object? sender, RoutedEventArgs e) => Editor.Undo();
