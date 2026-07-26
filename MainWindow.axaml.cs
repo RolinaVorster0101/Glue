@@ -13,6 +13,7 @@ using Avalonia.Threading;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
+using Glue.Models;
 using Glue.Services;
 using Microsoft.CodeAnalysis;
 
@@ -234,6 +235,60 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnOpenFolderClicked(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Open Folder",
+            AllowMultiple = false
+        });
+
+        if (folders.Count == 0) return;
+
+        var rootPath = folders[0].Path.LocalPath;
+        var rootNode = ProjectTreeBuilder.Build(rootPath);
+
+        // TreeView.ItemsSource expects a collection of roots, even though we
+        // only ever have one — a single opened folder.
+        ExplorerTree.ItemsSource = new[] { rootNode };
+    }
+
+    private async void OnExplorerSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ExplorerTree.SelectedItem is FileTreeNode { IsDirectory: false } node)
+        {
+            await LoadFileIntoEditorAsync(node.FullPath);
+        }
+    }
+
+    /// <summary>
+    /// Shared file-loading path used by both File > Open File and clicking
+    /// a file in the Explorer tree — previously duplicated between the two.
+    /// </summary>
+    private async Task LoadFileIntoEditorAsync(string filePath)
+    {
+        // Save fold state for whatever was open before switching away from it.
+        SaveFoldStateForCurrentFile();
+
+        var text = await File.ReadAllTextAsync(filePath);
+
+        _currentFilePath = filePath;
+        Editor.Text = text;
+
+        // Re-pick syntax highlighting based on the opened file's actual extension.
+        // ".cs" now resolves to our custom Glue definition (registered above);
+        // anything else still falls back to AvaloniaEdit's built-in definitions
+        // until Phase 5 wires in LSP-backed highlighting per language.
+        var ext = Path.GetExtension(_currentFilePath);
+        Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(ext);
+
+        UpdateStatus(_currentFilePath);
+        ReanalyzeCurrentFile(restoreFoldState: true);
+    }
+
     private async void OnOpenClicked(object? sender, RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
@@ -247,26 +302,7 @@ public partial class MainWindow : Window
 
         if (files.Count == 0) return;
 
-        // Save fold state for whatever was open before switching away from it.
-        SaveFoldStateForCurrentFile();
-
-        var file = files[0];
-        await using var stream = await file.OpenReadAsync();
-        using var reader = new StreamReader(stream);
-        var text = await reader.ReadToEndAsync();
-
-        _currentFilePath = file.Path.LocalPath;
-        Editor.Text = text;
-
-        // Re-pick syntax highlighting based on the opened file's actual extension.
-        // ".cs" now resolves to our custom Glue definition (registered above);
-        // anything else still falls back to AvaloniaEdit's built-in definitions
-        // until Phase 5 wires in LSP-backed highlighting per language.
-        var ext = Path.GetExtension(_currentFilePath);
-        Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(ext);
-
-        UpdateStatus(_currentFilePath);
-        ReanalyzeCurrentFile(restoreFoldState: true);
+        await LoadFileIntoEditorAsync(files[0].Path.LocalPath);
     }
 
     private async void OnSaveClicked(object? sender, RoutedEventArgs e)
