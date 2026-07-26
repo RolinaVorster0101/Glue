@@ -10,11 +10,13 @@
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Editor core | **AvalonEdit** | Pure .NET/WPF-native, MIT licensed, forkable — chosen over Monaco to keep the whole codebase in C# and allow deep customization |
-| Shell (outer app) | **Avalonia** (or WPF) | Docking panels, solution explorer, output/terminal panes. Avalonia preferred for active community + cross-platform potential |
-| C# intelligence | **Roslyn** (`Microsoft.CodeAnalysis.CSharp`) | Hosted in-process. Diagnostics, completion, refactoring, formatting, folding — all from the same compiler VS itself uses |
-| Other languages | **LSP (Language Server Protocol)** | Your IDE is an LSP *client*; language servers run as local subprocesses, no network dependency |
-| Debugging | **DAP (Debug Adapter Protocol)** | `netcoredbg` (C#), `delve`/`dlv dap` (Go), `lldb-dap`/cpptools adapter (C/C++) |
+| Editor core | **AvaloniaEdit** | Avalonia's port of AvalonEdit — a DIFFERENT NuGet package (`Avalonia.AvaloniaEdit`) from WPF's AvalonEdit, easy to mix up. MIT licensed, forkable. |
+| Shell (outer app) | **Avalonia** (.NET 8) — decided, not "or WPF" | Cross-platform, active community. Currently a classic File/Edit/View/Build menu bar (Phase 1–5 deliberately build function first); the activity-rail visual restyle from `docs/STYLEGUIDE.md` is explicitly Phase 6. |
+| C# intelligence | **Roslyn** (`Microsoft.CodeAnalysis.CSharp` + `.Workspaces` + `.Features` + `.CSharp.Features`) | Hosted in-process. Diagnostics, completion, formatting, folding, navigation (Go to Definition/Find References/Rename) — all from the same compiler VS itself uses. |
+| True project parsing | **MSBuildWorkspace** (`Microsoft.CodeAnalysis.Workspaces.MSBuild` + `Microsoft.Build.Locator`) | Loads a real `.csproj` — all its files, references, target framework. `MSBuildLocator.RegisterDefaults()` must run as the literal first line of `Main()`, before anything else touches MSBuild/Roslyn.MSBuild types. |
+| Other languages | **LSP (Language Server Protocol)** | Your IDE is an LSP *client*; language servers run as local subprocesses, no network dependency. Not yet built — Phase 5. |
+| Debugging | **DAP (Debug Adapter Protocol)** | `netcoredbg` (C#), `delve`/`dlv dap` (Go), `lldb-dap`/cpptools adapter (C/C++). Not yet built — Phase 4. |
+| Dev tooling | **Avalonia.Diagnostics (DevTools)** | Debug-config only, `F12` to open. Used repeatedly to diagnose real Avalonia style-priority/template bugs rather than guessing blind. `F12` is reserved for DevTools — navigation features use `Ctrl+Alt+G`/`Ctrl+Alt+R`/`F2` instead to avoid the conflict. |
 
 **Key clarification on dependencies:** LSP and DAP are open specs, not services. Language servers (`gopls` — Google, `clangd` — LLVM, `rust-analyzer` — community) run as local subprocesses, communicating over stdin/stdout. No ongoing connection to Microsoft or anyone else after initial one-time binary download.
 
@@ -34,32 +36,40 @@
 ## 2. Feature Set
 
 ### 2.1 Editor Core
-- Multi-cursor, selection, undo/redo, large-file performance (AvalonEdit baseline)
-- Syntax highlighting per language
-- **Code folding**
-  - C#: Roslyn syntax tree → custom `IFoldingStrategy` (handles `#region`/`#endregion` as first-class trivia, nests correctly)
-  - Go/C/C++: LSP `textDocument/foldingRange` → same `IFoldingStrategy` interface, different backend
-  - Fallback: AvalonEdit's built-in `BraceFoldingStrategy` for unknown/plain text
-  - Python (future): indentation-based folding via LSP; `# region` comment convention as an optional add-on layer
-  - **Confirmed:** fold state always persisted per file across sessions — a sidecar store (e.g. `{ "UploadHandler.cs": [120, 340, 502] }`, offsets/line numbers of collapsed regions) restores collapsed state automatically on reopen
-  - Plus a global **"Expand All" / "Collapse All" toggle** (button or shortcut) for the current file — overrides/updates the persisted state in one click
-- **Format Document / Format Selection** (shortcut, VS-equivalent: Ctrl+K, Ctrl+D / Ctrl+K, Ctrl+F)
-  - C#: Roslyn formatter, driven by a **custom `.editorconfig`** encoding your own house style (brace placement, spacing, indentation) rather than defaults
-    - *Reminder: an `.editorconfig` is just a small text file that tells the formatter your preferred code style — tabs vs spaces, brace-on-new-line vs same-line, spacing, naming conventions. "Format Document" reads it and conforms your code to it. What you need to decide (whenever convenient): your own personal style preferences for these rules.*
-  - Go/C/C++: LSP `textDocument/formatting` / `rangeFormatting` → `gofmt` / `clang-format`
+- **✅ Built:** AvaloniaEdit-based editor, custom C# syntax highlighting matching `docs/STYLEGUIDE.md` (`GlueCSharp.xshd`), File Open/Save/Save As, Explorer sidebar (folder tree)
+- **✅ Built:** Basic completion (`Ctrl+Space`) — Roslyn's `CompletionService`, project-aware when a project is loaded (sees other files' types/members), single-file fallback otherwise
+- Multi-cursor, selection — not yet built (undo/redo and large-file performance come from AvaloniaEdit's own baseline, already functional)
+- **Code folding — ✅ Built**
+  - C#: Roslyn syntax tree → custom folding logic (`RoslynFoldingService`), handles `#region`/`#endregion` (nesting, label text, indentation) and class/method/constructor/property bodies
+  - Go/C/C++: LSP `textDocument/foldingRange` — not yet built (Phase 5)
+  - Fold state persisted per file (`FoldStateStore`, JSON sidecar under `%APPDATA%\Glue\foldstate.json`), restored on reopen
+  - Expand All / Collapse All in the View menu
+- **Format Document — ✅ Built** (`Ctrl+Alt+F` placeholder shortcut)
+  - C#: Roslyn's formatter, currently using its **default conventions** — the personal `.editorconfig` house style is still an open decision (not urgent)
+  - Go/C/C++: LSP-based — not yet built (Phase 5)
 
 ### 2.2 Code Intelligence & Navigation
-- Go to Definition / Peek Definition
-- Find All References
+- **✅ Built:** Go to Definition (`Ctrl+Alt+G`) / Find All References (`Ctrl+Alt+R`) / Rename (`F2`) — all via Roslyn's `SymbolFinder`/`Renamer` against the loaded project (`RoslynProjectService`/`MSBuildWorkspace`), not single-file guesswork. Rename shows a confirmation dialog listing every affected file before anything is written; changes to files other than the one currently open are held as **pending changes** (not written to disk) until Save All — see "2.2a Multi-file safety" below.
+- Peek Definition (inline, without leaving the file) — not yet built, Go to Definition currently always jumps/switches files
 - Call Hierarchy
-- Rename refactoring (safe, project-wide)
-- Extract Method / Extract Variable
+- Extract Method / Extract Variable — not yet built
 - Quick Actions / lightbulb-style inline fixes (Roslyn analyzers + code fixes)
 - CodeLens-style inline annotations (reference counts, etc.)
 - **CSS Quick Actions** (right-click on a selector):
   - "Add Media Query for this selector" → submenu of default breakpoints (Mobile/Tablet/Desktop, values from a personal `breakpoints.json`) or a custom value, inserts a wrapping `@media` block scaffolded around the current rule
   - Same mechanism extends to other scaffolding: `:hover`/`:focus`/`:active` state blocks, dark-mode override (`@media (prefers-color-scheme: dark)`), print stylesheet override
   - Selector-at-cursor detection powered by the CSS LSP server's `hover`/`documentSymbol` requests — no custom CSS parser needed
+
+### 2.2a Multi-file safety (built, not originally itemized — added once Rename made it necessary)
+Rename can affect files other than the one currently open, which exposed a real gap: Glue only edits one file at a time, so there was no "unsaved" concept for files it never actually opened. Fixed with:
+- **Dirty-state tracking**: a `_lastSavedText` snapshot (what's actually on disk) compared against live editor content — the same pattern that will generalize to per-tab tracking once multi-tab editing (see 2.2b) lands.
+- **Pending file changes**: a `_pendingFileChanges` dictionary (file path → new content) for Rename-affected files that aren't currently open. Opening one of these files surfaces its pending content instead of the stale on-disk version.
+- **Save All**: genuinely saves the current file (if dirty) *and* every pending file, then reloads the project so Roslyn's symbol table reflects reality. Distinct from plain Save, which only ever touches the currently open file.
+- **Confirmation before writing**: Rename shows every affected file and requires explicit confirmation before touching anything — nothing is written just by choosing a new name.
+- **Unsaved-changes prompts**: closing the window, using File > Exit, or switching to a different file (Open File, Explorer click, Go to Definition, Find All References — all funnel through one shared `LoadFileIntoEditorAsync`) all check for unsaved changes first and offer Save All / Discard / Cancel via a shared dialog.
+
+### 2.2b Multi-tab editing (planned, not yet built)
+Glue currently edits one file at a time — opening a new file replaces the current buffer (with the unsaved-changes prompt above if it's dirty). Multiple simultaneously open files (tabs across the top, matching the reference mockup and every mainstream IDE) is planned. When built, the per-file dirty-tracking pattern already established (2.2a) generalizes directly — each tab gets its own instance of that same tracking, rather than the single global one used today. Not yet assigned to a specific phase; likely alongside Split Editor in Phase 6, since both concern the same "more than one file open/visible at once" architecture.
 
 ### 2.3 Project Scaffolding & Templates
 - "New Project/Page" wizard: language → project type picker
@@ -115,9 +125,9 @@ Example — secure image upload, bakes in:
 Other categories: SQL (parameterized-only), Razor output encoding review flags, CSRF anti-forgery tokens pre-wired into form templates.
 
 ### 2.5 Build & Run
-- `dotnet build`/MSBuild API integration, captured output pane
-- Per-language build detection (Cargo, CMake, `go build`, `.csproj`)
-- Launch/run integration
+- **✅ Built:** `dotnet build` as a real subprocess (`BuildService`), streamed live into an Output tab, `Ctrl+Shift+B` — surfaces genuine MSBuild/NuGet errors, not just Roslyn's in-process diagnostics. Fixed a real bug along the way: `MSBuildLocator.RegisterDefaults()` (needed for `MSBuildWorkspace`, see 2.2's project parsing) sets environment variables that leak into child `dotnet` processes and cause an assembly-version conflict (`MSB4018`) — stripped before spawning the build/run subprocess.
+- Per-language build detection (Cargo, CMake, `go build`) — not yet built (Phase 5)
+- **✅ Built:** `dotnet run` as a subprocess (`RunService`), live output, cancellable (`Ctrl+F5` / Stop) — plain run-without-debugging, no debugger attached yet (that's Phase 4)
 
 ### 2.6 Debugging
 - DAP client in the shell
@@ -269,6 +279,8 @@ Standard IDE-shell basics that every other feature above assumes exist, but hadn
 - Full Screen
 - Command Palette (see below)
 
+*(Multi-tab editing — see section 2.2b for the full note; likely lands alongside Split Editor above, since both concern "more than one file open/visible at once.")*
+
 **Command Palette** (the important one)
 A fuzzy-searchable, keyboard-triggered (e.g. `Ctrl+Shift+P`) list of every command in the IDE — Format Document, New Repo, Add Secret, Run Advisory Check, everything. As the feature surface grows across menus/panels/shortcuts, this becomes the fastest way to reach anything without memorizing where it lives. Should be wired up as commands are built, not bolted on at the end — every new feature registers itself here as it's added.
 
@@ -298,20 +310,20 @@ A single place to manage the IDE itself, rather than hand-editing config files:
 ## 3. Suggested Build Order
 
 **Phase 1 — Core loop**
-1. Shell app + AvalonEdit showing a single file, syntax highlighted
-2. Solution/project parsing (open folder, list files, open `.csproj`)
-3. Roslyn wired in: live diagnostics, basic completion
-4. Format Document (Roslyn formatter + your `.editorconfig`)
-5. Code folding (`#region`-aware, Roslyn-backed) — persisted per file, plus Expand All/Collapse All toggle
-6. Basic File/Edit/View menu shell: New/Open/Save/Save As/Save All, Undo/Redo, Find & Replace, line operations, Toggle Sidebar/Panel
+1. ✅ Shell app + AvaloniaEdit showing a single file, syntax highlighted
+2. ✅ Solution/project parsing (open folder, list files, open `.csproj`) — via MSBuildWorkspace, genuinely loads the whole project
+3. ✅ Roslyn wired in: live diagnostics, basic completion — both project-aware when a project is loaded, single-file fallback otherwise
+4. ✅ Format Document (Roslyn formatter — currently default conventions; your `.editorconfig` house style is still an open decision)
+5. ✅ Code folding (`#region`-aware, Roslyn-backed) — persisted per file, plus Expand All/Collapse All toggle
+6. ✅ Basic File/Edit/View menu shell: New/Open/Save/Save As/Save All, Undo/Redo, Find (Replace still missing — AvaloniaEdit's stock SearchPanel is find-only), line operations, Toggle Sidebar/Panel
 
 **Phase 2 — Build & navigate**
-7. Build integration (`dotnet build` via Process/MSBuild API) + output pane
-8. Run/launch integration
-9. Go to Definition, Find References, Rename, Extract Method (Roslyn-backed)
-10. Integrated terminal
-11. Command Palette — every command from this phase onward registers itself here as it's built
-12. Settings & Preferences page (editor, formatting, keybindings, theme — expands as later phases add more categories)
+7. ✅ Build integration — real `dotnet build` subprocess, live Output tab, `Ctrl+Shift+B`
+8. ✅ Run/launch integration — real `dotnet run` subprocess, live output, cancellable, `Ctrl+F5`
+9. ✅ Go to Definition (`Ctrl+Alt+G`), Find All References (`Ctrl+Alt+R`), Rename (`F2`, with confirmation + pending-changes safety — see 2.2a). **Extract Method still not built.**
+10. Integrated terminal — not yet built
+11. Command Palette — not yet built
+12. Settings & Preferences page — not yet built
 
 **Phase 3 — Scaffolding & security**
 13. Template manifest format + wizard UI

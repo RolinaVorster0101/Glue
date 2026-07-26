@@ -21,7 +21,10 @@ using AvaloniaEdit.Search;
 using Avalonia.VisualTree;
 using Glue.Models;
 using Glue.Services;
+using Glue.Views;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.FindSymbols;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Glue;
 
@@ -33,6 +36,23 @@ public partial class MainWindow : Window
     private CompletionWindow? _completionWindow;
     private readonly RoslynProjectService _projectService = new();
     private CancellationTokenSource? _runCancellation;
+
+    // Snapshot of what's actually on disk for _currentFilePath (or "" for a
+    // new/unsaved file), used to detect unsaved changes in the open editor.
+    private string _lastSavedText = "";
+
+    // Rename can affect files that aren't the one currently open — Glue only
+    // edits one file at a time, so there's no editor tab to hold "unsaved"
+    // state for those. Their new content lives here instead until Save All
+    // (or opening that specific file, which surfaces its pending content)
+    // actually writes it to disk.
+    private readonly Dictionary<string, string> _pendingFileChanges = new(StringComparer.OrdinalIgnoreCase);
+
+    // Guards against re-triggering the unsaved-changes prompt after the user
+    // has already confirmed they want to close (see the Closing handler).
+    private bool _isReallyClosing;
+
+    private bool IsCurrentFileDirty => Editor.Text != _lastSavedText;
 
     // Debounce timer: re-analyze (diagnostics + folding) ~500ms after the
     // user stops typing, rather than on every keystroke.
@@ -81,16 +101,106 @@ public partial class MainWindow : Window
             _reanalysisDebounceTimer.Start();
         };
 
-        Closing += (_, _) =>
-        {
-            SaveFoldStateForCurrentFile();
-            _runCancellation?.Cancel();
-        };
+        Closing += OnWindowClosing;
 
         // Seed content so the window isn't empty on first run.
         Editor.Text = SampleFile.Content;
         UpdateStatus("Untitled.cs (sample — not saved)");
         _ = ReanalyzeCurrentFile(restoreFoldState: false);
+    }
+
+    /// <summary>
+    /// Gatekeeper for closing the window while there are unsaved changes —
+    /// either the current editor is dirty, or Rename left pending changes
+    /// for files that aren't currently open (_pendingFileChanges). Cancels
+    /// the close, shows Views/UnsavedChangesDialog.axaml, and only actually
+    /// closes once the user has explicitly chosen Save All or Discard All.
+    /// _isReallyClosing prevents this from re-triggering itself when we
+    /// call Close() again after the user's choice.
+    /// </summary>
+    private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_isReallyClosing) return;
+
+        var hasUnsavedChanges = IsCurrentFileDirty || _pendingFileChanges.Count > 0;
+        if (!hasUnsavedChanges)
+        {
+            SaveFoldStateForCurrentFile();
+            _runCancellation?.Cancel();
+            return;
+        }
+
+        e.Cancel = true;
+
+        var dialog = new UnsavedChangesDialog(GetUnsavedFileNames());
+        var choice = await dialog.ShowDialog<UnsavedChangesChoice>(this);
+
+        switch (choice)
+        {
+            case UnsavedChangesChoice.SaveAll:
+                await SaveAllAsync();
+                _isReallyClosing = true;
+                Close();
+                break;
+
+            case UnsavedChangesChoice.Discard:
+                _isReallyClosing = true;
+                Close();
+                break;
+
+            case UnsavedChangesChoice.Cancel:
+            default:
+                // Stay open — do nothing.
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Lists every file with unsaved changes, for display in the exit
+    /// prompt and the rename confirmation dialog's context.
+    /// </summary>
+    private List<string> GetUnsavedFileNames()
+    {
+        var names = new List<string>();
+
+        if (IsCurrentFileDirty)
+        {
+            names.Add(_currentFilePath is not null
+                ? Path.GetFileName(_currentFilePath) + " (open)"
+                : "Untitled.cs (open)");
+        }
+
+        names.AddRange(_pendingFileChanges.Keys.Select(Path.GetFileName)!);
+        return names;
+    }
+
+    /// <summary>
+    /// If the currently open file has unsaved changes, asks whether to save,
+    /// discard, or cancel — returns false only on Cancel, meaning whatever
+    /// the caller was about to do (switch to a different file) should be
+    /// aborted entirely. Scoped to just the current file's own dirty state —
+    /// unrelated pending rename changes for OTHER files aren't affected by
+    /// switching away from this one, so they're not part of this check.
+    /// </summary>
+    private async Task<bool> ConfirmProceedPastUnsavedChangesAsync()
+    {
+        if (!IsCurrentFileDirty) return true;
+
+        var fileName = _currentFilePath is not null ? Path.GetFileName(_currentFilePath) : "Untitled.cs";
+        var dialog = new UnsavedChangesDialog(new List<string> { fileName + " (open)" });
+        var choice = await dialog.ShowDialog<UnsavedChangesChoice>(this);
+
+        switch (choice)
+        {
+            case UnsavedChangesChoice.SaveAll:
+                await SaveAsync();
+                return true;
+            case UnsavedChangesChoice.Discard:
+                return true;
+            case UnsavedChangesChoice.Cancel:
+            default:
+                return false;
+        }
     }
 
     /// <summary>
@@ -292,6 +402,11 @@ public partial class MainWindow : Window
                 OnFindAllReferencesClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Avalonia.Input.Key.F2:
+                OnRenameSymbolClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -311,8 +426,14 @@ public partial class MainWindow : Window
         if (!IsCSharpFile) return;
 
         var caretOffset = Editor.CaretOffset;
+        var formatted = RoslynFormattingService.Format(Editor.Text);
 
-        Editor.Text = RoslynFormattingService.Format(Editor.Text);
+        // Document.Replace (not the Text property setter) — setting Editor.Text
+        // directly is treated as loading a brand-new document, which bypasses
+        // the undo stack entirely (confirmed real bug: Ctrl+Z did nothing after
+        // Format Document or Rename). Replace() goes through the same editing
+        // pipeline as ordinary typing, so it's a single, real undo step.
+        Editor.Document.Replace(0, Editor.Document.TextLength, formatted);
 
         Editor.CaretOffset = Math.Min(caretOffset, Editor.Text.Length);
         await ReanalyzeCurrentFile(restoreFoldState: false);
@@ -550,16 +671,41 @@ public partial class MainWindow : Window
     /// <summary>
     /// Shared file-loading path used by both File > Open File and clicking
     /// a file in the Explorer tree — previously duplicated between the two.
+    /// Also the single shared path for Go to Definition and Find References
+    /// jumping to a different file, which is why the unsaved-changes guard
+    /// below covers all of these at once rather than needing to be
+    /// duplicated at every call site.
+    ///
+    /// If this file has a pending change from a Rename that hasn't been
+    /// saved yet (_pendingFileChanges), that content is shown instead of
+    /// what's on disk — and removed from the pending dict, since it's now
+    /// tracked as ordinary editor-dirty state instead (compared against
+    /// _lastSavedText, which is always set to what's actually on disk).
     /// </summary>
-    private async Task LoadFileIntoEditorAsync(string filePath)
+    private async Task<bool> LoadFileIntoEditorAsync(string filePath)
     {
+        // If the file currently open has unsaved changes, ask before
+        // discarding them by switching away. Returns without doing anything
+        // if the user cancels — same class of protection as Rename/Exit.
+        if (!await ConfirmProceedPastUnsavedChangesAsync()) return false;
+
         // Save fold state for whatever was open before switching away from it.
         SaveFoldStateForCurrentFile();
 
-        var text = await File.ReadAllTextAsync(filePath);
+        var diskText = await File.ReadAllTextAsync(filePath);
 
         _currentFilePath = filePath;
-        Editor.Text = text;
+        _lastSavedText = diskText;
+
+        if (_pendingFileChanges.TryGetValue(filePath, out var pendingText))
+        {
+            Editor.Text = pendingText;
+            _pendingFileChanges.Remove(filePath);
+        }
+        else
+        {
+            Editor.Text = diskText;
+        }
 
         // Re-pick syntax highlighting based on the opened file's actual extension.
         // ".cs" now resolves to our custom Glue definition (registered above);
@@ -570,6 +716,7 @@ public partial class MainWindow : Window
 
         UpdateStatus(_currentFilePath);
         await ReanalyzeCurrentFile(restoreFoldState: true);
+        return true;
     }
 
     private async void OnOpenClicked(object? sender, RoutedEventArgs e)
@@ -592,14 +739,15 @@ public partial class MainWindow : Window
 
     private async void OnSaveAsClicked(object? sender, RoutedEventArgs e) => await SaveAsAsync();
 
-    private async void OnSaveAllClicked(object? sender, RoutedEventArgs e) => await SaveAsync();
+    private async void OnSaveAllClicked(object? sender, RoutedEventArgs e) => await SaveAllAsync();
 
     private async void OnNewFileClicked(object? sender, RoutedEventArgs e) => await NewFile();
 
     /// <summary>
     /// Prompts to save if there's no current file path yet, otherwise saves
-    /// straight to it. Shared by File > Save, the Ctrl+S shortcut, and
-    /// File > Save All (which is currently identical — see the XAML comment).
+    /// straight to it. Shared by File > Save and the Ctrl+S shortcut.
+    /// File > Save All (SaveAllAsync) also saves the current file this way,
+    /// plus every pending rename change for other files.
     /// </summary>
     private async Task SaveAsync()
     {
@@ -610,6 +758,7 @@ public partial class MainWindow : Window
         }
 
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
+        _lastSavedText = Editor.Text;
         UpdateStatus(_currentFilePath);
         await ReanalyzeCurrentFile(restoreFoldState: false);
         SaveFoldStateForCurrentFile();
@@ -631,9 +780,46 @@ public partial class MainWindow : Window
 
         _currentFilePath = file.Path.LocalPath;
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
+        _lastSavedText = Editor.Text;
         UpdateStatus(_currentFilePath);
         await ReanalyzeCurrentFile(restoreFoldState: false);
         SaveFoldStateForCurrentFile();
+    }
+
+    /// <summary>
+    /// Saves the current editor's content (if dirty) AND every pending
+    /// rename change for files that aren't currently open — the real,
+    /// complete Save All, distinct from plain Save which only ever touches
+    /// the currently open file.
+    ///
+    /// Reloads the loaded project afterward (if any pending changes were
+    /// written) so Roslyn's own symbol table reflects the new names —
+    /// deliberately NOT done right after Rename itself, since at that point
+    /// the pending files' disk content is still the OLD, un-renamed text;
+    /// reloading then would just re-read stale state for no benefit.
+    /// </summary>
+    private async Task SaveAllAsync()
+    {
+        if (IsCurrentFileDirty)
+        {
+            await SaveAsync();
+        }
+
+        var hadPendingChanges = _pendingFileChanges.Count > 0;
+
+        foreach (var (filePath, newText) in _pendingFileChanges)
+        {
+            await File.WriteAllTextAsync(filePath, newText);
+        }
+        _pendingFileChanges.Clear();
+
+        if (hadPendingChanges && _projectService.CsprojPath is not null)
+        {
+            await _projectService.OpenProjectAsync(_projectService.CsprojPath);
+            await ReanalyzeCurrentFile(restoreFoldState: false);
+        }
+
+        UpdateStatus("Save All: all changes saved");
     }
 
     private async Task NewFile()
@@ -641,6 +827,7 @@ public partial class MainWindow : Window
         SaveFoldStateForCurrentFile();
         _currentFilePath = null;
         Editor.Text = string.Empty;
+        _lastSavedText = string.Empty;
         Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".cs");
         UpdateStatus("Untitled.cs (unsaved)");
         await ReanalyzeCurrentFile(restoreFoldState: false);
@@ -882,8 +1069,10 @@ public partial class MainWindow : Window
         {
             // Different file — load it first, then navigate. LoadFileIntoEditorAsync
             // re-analyzes the newly opened file, which is exactly what we want here too.
-            await LoadFileIntoEditorAsync(definition.FilePath);
-            NavigateEditorTo(definition.Offset);
+            // If the user cancels (current file had unsaved changes), don't navigate —
+            // that offset belongs to a file that never actually got opened.
+            var loaded = await LoadFileIntoEditorAsync(definition.FilePath);
+            if (loaded) NavigateEditorTo(definition.Offset);
         }
     }
 
@@ -948,7 +1137,8 @@ public partial class MainWindow : Window
 
         if (!string.Equals(item.FilePath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
         {
-            await LoadFileIntoEditorAsync(item.FilePath);
+            var loaded = await LoadFileIntoEditorAsync(item.FilePath);
+            if (!loaded) return; // cancelled — don't navigate into a file that never opened
         }
 
         var lineNumber = Math.Clamp(item.Line, 1, Editor.Document.LineCount);
@@ -956,12 +1146,129 @@ public partial class MainWindow : Window
         NavigateEditorTo(line.Offset);
     }
 
+    /// <summary>
+    /// Renames the symbol under the caret across the whole loaded project
+    /// (Services/RoslynNavigationService.cs). Prompts for the new name via
+    /// a small custom dialog (Views/RenameDialog.axaml — Avalonia has no
+    /// built-in input box), then shows Views/ConfirmRenameDialog.axaml
+    /// listing every file that would change, BEFORE anything is written.
+    ///
+    /// On confirmation: the currently open file's content updates directly
+    /// in the editor (ordinary unsaved-changes state, same as any edit).
+    /// Every OTHER changed file's new content goes into _pendingFileChanges
+    /// instead of being written to disk immediately — nothing outside the
+    /// currently open file is touched on disk until Save All (or opening
+    /// that specific file, which surfaces its pending content).
+    /// </summary>
+    private async void OnRenameSymbolClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!IsCSharpFile) return;
+
+        var projectDocument = _currentFilePath is not null
+            ? _projectService.FindDocument(_currentFilePath)
+            : null;
+
+        if (projectDocument is null)
+        {
+            UpdateStatus("Rename: load a project via File > Open Project first");
+            return;
+        }
+
+        // Resolve the symbol first, just to prefill the dialog with its
+        // current name — the actual rename re-resolves it independently.
+        var updatedDocument = projectDocument.WithText(SourceText.From(Editor.Text));
+        var semanticModel = await updatedDocument.GetSemanticModelAsync();
+        var symbol = semanticModel is null
+            ? null
+            : await SymbolFinder.FindSymbolAtPositionAsync(
+                semanticModel, Editor.CaretOffset, updatedDocument.Project.Solution.Workspace);
+
+        if (symbol is null)
+        {
+            UpdateStatus("Rename: no symbol found at cursor");
+            return;
+        }
+
+        var dialog = new RenameDialog(symbol.Name);
+        var newName = await dialog.ShowDialog<string?>(this);
+
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            UpdateStatus("Rename cancelled");
+            return;
+        }
+
+        if (newName == symbol.Name)
+        {
+            // Previously a silent no-op here — the dialog pre-fills and
+            // pre-selects the current name, so clicking Rename without
+            // actually typing something new looked like the feature was
+            // broken (dialog appears, nothing happens, no explanation).
+            UpdateStatus("Rename: new name is the same as the current name — nothing to do");
+            return;
+        }
+
+        UpdateStatus("Computing rename...");
+
+        var result = await RoslynNavigationService.RenameSymbolAsync(
+            projectDocument, Editor.Text, Editor.CaretOffset, newName);
+
+        if (!result.Success)
+        {
+            UpdateStatus($"Rename failed: {result.ErrorMessage}");
+            return;
+        }
+
+        if (result.ChangedFiles.Count == 0)
+        {
+            UpdateStatus("Rename: no changes needed");
+            return;
+        }
+
+        // Nothing has been written yet — confirm before touching anything.
+        var affectedFileNames = result.ChangedFiles.Keys.Select(Path.GetFileName).ToList()!;
+        var confirmDialog = new ConfirmRenameDialog(symbol.Name, newName, affectedFileNames);
+        var confirmed = await confirmDialog.ShowDialog<bool>(this);
+
+        if (!confirmed)
+        {
+            UpdateStatus("Rename cancelled");
+            return;
+        }
+
+        foreach (var (filePath, newText) in result.ChangedFiles)
+        {
+            if (string.Equals(filePath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                var caretOffset = Editor.CaretOffset;
+                // Document.Replace, not the Text setter — see FormatDocument's
+                // comment for why (setting Text directly bypasses the undo stack).
+                Editor.Document.Replace(0, Editor.Document.TextLength, newText);
+                Editor.CaretOffset = Math.Min(caretOffset, Editor.Text.Length);
+            }
+            else
+            {
+                // Not written to disk yet — held as a pending change until
+                // Save All, or until this specific file is opened (see
+                // LoadFileIntoEditorAsync).
+                _pendingFileChanges[filePath] = newText;
+            }
+        }
+
+        UpdateStatus(
+            $"Renamed '{symbol.Name}' to '{newName}' — {result.ChangedFiles.Count} file(s) changed, " +
+            "not yet saved (use Save All)");
+
+        await ReanalyzeCurrentFile(restoreFoldState: false);
+    }
+
     private void OnExitClicked(object? sender, RoutedEventArgs e)
     {
-        // Environment.Exit bypasses the window's Closing event entirely,
-        // so fold state has to be saved explicitly here too.
-        SaveFoldStateForCurrentFile();
-        Environment.Exit(0);
+        // Previously called Environment.Exit(0) directly, which bypasses the
+        // window's Closing event entirely — meaning File > Exit skipped the
+        // unsaved-changes prompt while the window's own X button honored it.
+        // Routing through Close() instead makes both paths behave the same.
+        Close();
     }
 
     private void UpdateStatus(string path)

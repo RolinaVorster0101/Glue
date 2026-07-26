@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
+using Microsoft.CodeAnalysis.Rename;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Glue.Services;
@@ -21,11 +22,18 @@ public record DefinitionLocation(string FilePath, int Offset);
 public record ReferenceItem(string FilePath, int Offset, int Line, string LineText);
 
 /// <summary>
-/// Go to Definition and Find All References, both backed by real Roslyn
-/// symbol resolution against the loaded project (see RoslynProjectService).
-/// Requires a project to be loaded — single-file analysis has no meaningful
-/// cross-file "definition"/"references" to resolve, so this is deliberately
-/// project-only rather than trying to support both paths.
+/// Result of a rename: whether it succeeded, an error message if not, and
+/// every changed file's path mapped to its complete new text content.
+/// </summary>
+public record RenameResult(bool Success, string? ErrorMessage, IReadOnlyDictionary<string, string> ChangedFiles);
+
+/// <summary>
+/// Go to Definition, Find All References, and Rename — all backed by real
+/// Roslyn symbol resolution against the loaded project (see
+/// RoslynProjectService). Requires a project to be loaded — single-file
+/// analysis has no meaningful cross-file definitions/references/renames to
+/// resolve, so this is deliberately project-only rather than trying to
+/// support both paths.
 /// </summary>
 public static class RoslynNavigationService
 {
@@ -101,5 +109,70 @@ public static class RoslynNavigationService
             .OrderBy(r => r.FilePath, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Line)
             .ToList();
+    }
+
+    /// <summary>
+    /// Renames the symbol under the caret across the whole loaded project,
+    /// via Roslyn's Renamer.RenameSymbolAsync — a real, semantically-aware
+    /// rename (every actual reference gets updated), not a text find-and-
+    /// replace. Returns every changed file's full new text content; the
+    /// caller is responsible for actually applying those changes (writing to
+    /// disk for files other than the one currently open in the editor).
+    ///
+    /// Written blind against the exact Renamer/SymbolRenameOptions API shape
+    /// for Roslyn 4.11 (no local build environment) — double-check against
+    /// any build error rather than assuming this is exactly right.
+    /// </summary>
+    public static async Task<RenameResult> RenameSymbolAsync(
+        Document document, string currentText, int caretOffset, string newName)
+    {
+        var updatedDocument = document.WithText(SourceText.From(currentText));
+        var semanticModel = await updatedDocument.GetSemanticModelAsync();
+        if (semanticModel is null)
+        {
+            return new RenameResult(false, "Could not analyze the current file.", new Dictionary<string, string>());
+        }
+
+        var symbol = await SymbolFinder.FindSymbolAtPositionAsync(
+            semanticModel, caretOffset, updatedDocument.Project.Solution.Workspace);
+        if (symbol is null)
+        {
+            return new RenameResult(false, "No symbol found at cursor.", new Dictionary<string, string>());
+        }
+
+        var solution = updatedDocument.Project.Solution;
+        Solution newSolution;
+
+        try
+        {
+            newSolution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), newName);
+        }
+        catch (Exception ex)
+        {
+            return new RenameResult(false, $"Rename failed: {ex.Message}", new Dictionary<string, string>());
+        }
+
+        var changedFiles = new Dictionary<string, string>();
+
+        foreach (var project in newSolution.Projects)
+        {
+            foreach (var doc in project.Documents)
+            {
+                if (doc.FilePath is null) continue;
+
+                var newText = await doc.GetTextAsync();
+                var oldDoc = solution.GetDocument(doc.Id);
+
+                if (oldDoc is not null)
+                {
+                    var oldText = await oldDoc.GetTextAsync();
+                    if (oldText.ContentEquals(newText)) continue;
+                }
+
+                changedFiles[doc.FilePath] = newText.ToString();
+            }
+        }
+
+        return new RenameResult(true, null, changedFiles);
     }
 }

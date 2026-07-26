@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Glue.Views.ConfirmRenameDialog"
+        Title="Confirm Rename"
+        Width="420" Height="280"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource BgSurfaceBrush}">
+
+    <DockPanel Margin="16">
+        <TextBlock x:Name="MessageText"
+                   DockPanel.Dock="Top"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,8"
+                   Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBlock DockPanel.Dock="Top"
+                   Text="Files that will be changed (none are saved to disk until you use Save or Save All):"
+                   TextWrapping="Wrap"
+                   FontSize="11"
+                   Margin="0,0,0,6"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,12,0,0"
+                    Spacing="8">
+            <Button Content="Cancel" Click="OnCancelClicked" />
+            <Button Content="Rename" Click="OnConfirmClicked" />
+        </StackPanel>
+        <ListBox x:Name="FilesList" Background="Transparent" BorderThickness="0" />
+    </DockPanel>
+
+</Window>

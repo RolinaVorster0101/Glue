@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Glue.Views.UnsavedChangesDialog"
+        Title="Unsaved Changes"
+        Width="420" Height="280"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource BgSurfaceBrush}">
+
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Top"
+                   Text="You have unsaved changes in the following file(s):"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,8"
+                   Foreground="{DynamicResource TextPrimaryBrush}" />
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,12,0,0"
+                    Spacing="8">
+            <Button Content="Cancel" Click="OnCancelClicked" />
+            <Button Content="Discard All" Click="OnDiscardClicked" />
+            <Button Content="Save All" Click="OnSaveAllClicked" />
+        </StackPanel>
+        <ListBox x:Name="FilesList" Background="Transparent" BorderThickness="0" />
+    </DockPanel>
+
+</Window>

@@ -23,10 +23,11 @@
                 <Separator />
                 <MenuItem Header="_Save" InputGesture="Ctrl+S" Click="OnSaveClicked" />
                 <MenuItem Header="Save _As..." InputGesture="Ctrl+Shift+S" Click="OnSaveAsClicked" />
-                <!-- Save All is currently identical to Save — Glue only edits one
-                     file at a time until multi-tab editing exists. Kept as its own
-                     menu item now so the menu shape already matches what multi-file
-                     editing will need later. -->
+                <!-- Saves the current editor's changes AND every pending
+                     change from Rename that touched files other than the one
+                     currently open (Glue only edits one file at a time, so
+                     those don't have an open tab of their own — see
+                     _pendingFileChanges in MainWindow.axaml.cs). -->
                 <MenuItem Header="Save A_ll" Click="OnSaveAllClicked" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="OnExitClicked" />
@@ -51,6 +52,7 @@
                      which single-file analysis doesn't have. -->
                 <MenuItem Header="_Go to Definition (Ctrl+Alt+G)" Click="OnGoToDefinitionClicked" />
                 <MenuItem Header="_Find All References (Ctrl+Alt+R)" Click="OnFindAllReferencesClicked" />
+                <MenuItem Header="Re_name Symbol (F2)" Click="OnRenameSymbolClicked" />
                 <Separator />
                 <MenuItem Header="_Trigger Suggestion (Ctrl+Space)" Click="OnTriggerCompletionClicked" />
                 <Separator />

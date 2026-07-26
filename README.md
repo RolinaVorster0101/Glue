@@ -25,7 +25,7 @@ And beyond that — a lot of what a modern IDE actually needs is scattered acros
 
 | Area | Highlights |
 |---|---|
-| **Editor core** | AvalonEdit-based, fully customizable, code folding (persisted per file), Format Document driven by your own `.editorconfig` |
+| **Editor core** | AvaloniaEdit-based, fully customizable, code folding (persisted per file), Format Document driven by your own `.editorconfig` |
 | **Language intelligence** | Roslyn for C#; LSP for Go (`gopls`), C/C++ (`clangd`), TypeScript/JavaScript, Python, and CSS/SCSS/LESS — Go to Definition, Find References, Rename, Extract Method, and more, consistent across languages |
 | **CSS Quick Actions** | Right-click a selector to scaffold a media query (with personal default breakpoints), a `:hover`/`:focus`/`:active` block, or a dark-mode override — powered by the CSS language server, no manual boilerplate typing |
 | **Scaffolding & templates** | A "New Project" wizard with a custom template engine — house-style boilerplate across C#/.NET, Node.js, React, TypeScript, and Rust, with a correct `.gitignore` included automatically every time |
@@ -70,17 +70,38 @@ dotnet restore
 dotnet run
 ```
 
-This launches the current Phase 1 shell: an editor window with C# syntax highlighting, line numbers, and File > Open/Save via native file dialogs.
+This launches the current shell: a real editor with C#-aware syntax highlighting, live Roslyn diagnostics and completion, code folding, Format Document, an Explorer sidebar, and — once you load a project via File > Open Project — true cross-file navigation (Go to Definition, Find All References, Rename) plus real `dotnet build`/`dotnet run` integration.
 
 ## Project structure
 
 ```
 Glue/
-  Glue.csproj          # Project file — Avalonia, AvaloniaEdit, Roslyn references
-  Program.cs           # Avalonia entry point
-  App.axaml(.cs)        # Application-level setup, theme, startup window
-  MainWindow.axaml(.cs) # Main shell window: menu, status bar, editor
+  Glue.csproj          # Project file — Avalonia, AvaloniaEdit, Roslyn, MSBuildWorkspace references
+  Program.cs           # Avalonia entry point (MSBuildLocator.RegisterDefaults() runs first)
+  App.axaml(.cs)        # Application-level setup, theme, DevTools (Debug-only)
+  MainWindow.axaml(.cs) # Main shell window: menu, status bar, editor, Explorer, Problems/Output/References tabs
   app.manifest          # Windows DPI/theming manifest
+  Models/
+    FileTreeNode.cs      # Explorer sidebar's file tree node model
+  Services/
+    RoslynDiagnosticsService.cs   # Live diagnostics (single-file + project-aware)
+    RoslynCompletionService.cs    # Basic completion (single-file + project-aware)
+    RoslynFoldingService.cs       # Code folding via Roslyn syntax tree
+    RoslynFormattingService.cs    # Format Document via Roslyn's formatter
+    RoslynNavigationService.cs    # Go to Definition, Find All References, Rename
+    RoslynProjectService.cs       # MSBuildWorkspace — true project parsing
+    RoslynReferences.cs           # Shared reference-assembly helper
+    FoldStateStore.cs             # Per-file fold state persistence
+    ProjectTreeBuilder.cs         # Explorer sidebar's folder→tree builder
+    BuildService.cs               # Real `dotnet build` subprocess
+    RunService.cs                 # Real `dotnet run` subprocess
+  Views/
+    RenameDialog.axaml(.cs)             # "Enter new name" dialog
+    ConfirmRenameDialog.axaml(.cs)       # Lists affected files before Rename writes anything
+    UnsavedChangesDialog.axaml(.cs)      # Save All / Discard / Cancel prompt
+  Styles/
+    Colors.axaml          # Color resource dictionary matching STYLEGUIDE.md
+    GlueCSharp.xshd        # Custom C# syntax highlighting definition
   docs/
     ROADMAP.md          # Full architecture, feature spec, and phased build order
     STYLEGUIDE.md        # Colors, typography, spacing, component conventions
@@ -100,7 +121,20 @@ Colors, typography, spacing, and component conventions — derived from the refe
 
 ## Project status
 
-**Phase 1 in progress.** The editor shell (Avalonia + AvaloniaEdit, syntax highlighting, File Open/Save) is built. Roslyn diagnostics, folding, and Format Document are next. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full build order.
+**Phase 1 complete. Phase 2 mostly complete.**
+
+Built and working:
+- Editor with custom C# syntax highlighting, Explorer sidebar, File Open/Save/Save As/Save All
+- Live Roslyn diagnostics and basic completion (`Ctrl+Space`) — project-aware when a project is loaded, single-file fallback otherwise
+- Code folding (`#region`-aware, persisted per file) and Format Document
+- **True project parsing** via MSBuildWorkspace (File > Open Project) — real cross-file awareness, not single-file guesswork
+- Real `dotnet build` (`Ctrl+Shift+B`) and `dotnet run` (`Ctrl+F5`) as actual subprocesses, with live output
+- Go to Definition (`Ctrl+Alt+G`), Find All References (`Ctrl+Alt+R`), Rename (`F2`) — genuine Roslyn symbol resolution across the whole project
+- Multi-file safety: dirty-state tracking, a real Save All, confirmation before Rename writes anything, and unsaved-changes prompts on exit or when switching files
+
+Not yet built: Extract Method, integrated terminal, Command Palette, Settings & Preferences page (the rest of Phase 2), multi-tab editing (single-buffer editing for now — see `docs/ROADMAP.md` section 2.2b), and everything from Phase 3 onward (scaffolding/templates, security snippets, debugging, multi-language support, the activity-rail visual restyle, database/Git/secrets integration, the Advisory Layer).
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full build order and exactly what's marked done.
 
 ## License
 
