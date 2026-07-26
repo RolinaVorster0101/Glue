@@ -53,6 +53,7 @@
                 <MenuItem Header="_Go to Definition (Ctrl+Alt+G)" Click="OnGoToDefinitionClicked" />
                 <MenuItem Header="_Find All References (Ctrl+Alt+R)" Click="OnFindAllReferencesClicked" />
                 <MenuItem Header="Re_name Symbol (F2)" Click="OnRenameSymbolClicked" />
+                <MenuItem Header="E_xtract Method (Ctrl+Alt+M)" Click="OnExtractMethodClicked" />
                 <Separator />
                 <MenuItem Header="_Trigger Suggestion (Ctrl+Space)" Click="OnTriggerCompletionClicked" />
                 <Separator />

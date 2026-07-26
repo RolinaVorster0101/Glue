@@ -439,6 +439,11 @@ public partial class MainWindow : Window
                 OnRenameSymbolClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Avalonia.Input.Key.M when ctrl && alt:
+                OnExtractMethodClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -1305,6 +1310,63 @@ public partial class MainWindow : Window
             "\n";
         OutputScrollViewer.ScrollToEnd();
 
+        await ReanalyzeCurrentFile(restoreFoldState: false);
+    }
+
+    /// <summary>
+    /// Extracts the currently selected statement(s) into a new method
+    /// (Services/RoslynExtractMethodService.cs). Scoped narrowly for this
+    /// first pass — see that service's doc comment for the exact
+    /// limitations (whole statements only, single method, 0-1 output
+    /// variables). Same undo-safe Document.Replace pattern as Format
+    /// Document and Rename, not the Text setter.
+    /// </summary>
+    private async void OnExtractMethodClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!IsCSharpFile) return;
+
+        if (Editor.SelectionLength == 0)
+        {
+            UpdateStatus("Extract Method: select the statement(s) to extract first");
+            return;
+        }
+
+        var projectDocument = _currentFilePath is not null
+            ? _projectService.FindDocument(_currentFilePath)
+            : null;
+
+        if (projectDocument is null)
+        {
+            UpdateStatus("Extract Method: load a project via File > Open Project first");
+            return;
+        }
+
+        var dialog = new ExtractMethodDialog("ExtractedMethod");
+        var newMethodName = await dialog.ShowDialog<string?>(this);
+
+        if (string.IsNullOrWhiteSpace(newMethodName)) return;
+
+        UpdateStatus("Extracting method...");
+
+        var selectionStart = Editor.SelectionStart;
+        var selectionEnd = Editor.SelectionStart + Editor.SelectionLength;
+
+        var result = await RoslynExtractMethodService.ExtractMethodAsync(
+            projectDocument, Editor.Text, selectionStart, selectionEnd, newMethodName);
+
+        if (!result.Success || result.NewDocumentText is null)
+        {
+            UpdateStatus($"Extract Method failed — see Output tab for details");
+            OutputText.Text += $"\n--- Extract Method failed ---\n{result.ErrorMessage}\n";
+            OutputScrollViewer.ScrollToEnd();
+            return;
+        }
+
+        var caretOffset = Editor.CaretOffset;
+        Editor.Document.Replace(0, Editor.Document.TextLength, result.NewDocumentText);
+        Editor.CaretOffset = Math.Min(caretOffset, Editor.Text.Length);
+
+        UpdateStatus($"Extracted '{newMethodName}'");
         await ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
