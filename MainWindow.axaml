@@ -16,13 +16,35 @@
              Solution Explorer / project-aware shell from the roadmap. -->
         <Menu DockPanel.Dock="Top" Background="{DynamicResource BgSurfaceBrush}">
             <MenuItem Header="_File" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="_New File" InputGesture="Ctrl+N" Click="OnNewFileClicked" />
                 <MenuItem Header="Open _Folder..." Click="OnOpenFolderClicked" />
                 <MenuItem Header="_Open File..." Click="OnOpenClicked" />
-                <MenuItem Header="_Save" Click="OnSaveClicked" />
+                <Separator />
+                <MenuItem Header="_Save" InputGesture="Ctrl+S" Click="OnSaveClicked" />
+                <MenuItem Header="Save _As..." InputGesture="Ctrl+Shift+S" Click="OnSaveAsClicked" />
+                <!-- Save All is currently identical to Save — Glue only edits one
+                     file at a time until multi-tab editing exists. Kept as its own
+                     menu item now so the menu shape already matches what multi-file
+                     editing will need later. -->
+                <MenuItem Header="Save A_ll" Click="OnSaveAllClicked" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="OnExitClicked" />
             </MenuItem>
             <MenuItem Header="_Edit" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="_Undo" InputGesture="Ctrl+Z" Click="OnUndoClicked" />
+                <MenuItem Header="_Redo" InputGesture="Ctrl+Y" Click="OnRedoClicked" />
+                <Separator />
+                <!-- Real find, via AvaloniaEdit's built-in SearchPanel (highlighting,
+                     next/prev, Ctrl+F). Its stock UI is find-only — no built-in
+                     replace box. Treating "Replace" as a near-term follow-up rather
+                     than block this batch on it. -->
+                <MenuItem Header="_Find..." InputGesture="Ctrl+F" Click="OnFindClicked" />
+                <Separator />
+                <MenuItem Header="Move Line _Up" InputGesture="Alt+Up" Click="OnMoveLineUpClicked" />
+                <MenuItem Header="Move Line _Down" InputGesture="Alt+Down" Click="OnMoveLineDownClicked" />
+                <MenuItem Header="_Duplicate Line" InputGesture="Ctrl+D" Click="OnDuplicateLineClicked" />
+                <MenuItem Header="Toggle Line _Comment (Ctrl+/)" Click="OnToggleCommentClicked" />
+                <Separator />
                 <!-- Ctrl+Alt+F is a placeholder single-key shortcut. A real VS-style
                      chord (Ctrl+K, Ctrl+D) needs proper keybinding infrastructure,
                      which arrives with the Command Palette / Settings work later
@@ -30,6 +52,9 @@
                 <MenuItem Header="_Format Document" InputGesture="Ctrl+Alt+F" Click="OnFormatDocumentClicked" />
             </MenuItem>
             <MenuItem Header="_View" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="Toggle _Sidebar" InputGesture="Ctrl+B" Click="OnToggleSidebarClicked" />
+                <MenuItem Header="Toggle _Panel" InputGesture="Ctrl+J" Click="OnTogglePanelClicked" />
+                <Separator />
                 <MenuItem Header="_Expand All" Click="OnExpandAllClicked" />
                 <MenuItem Header="_Collapse All" Click="OnCollapseAllClicked" />
             </MenuItem>
@@ -47,6 +72,7 @@
              Services/RoslynDiagnosticsService.cs about whole-project support
              arriving later (docs/ROADMAP.md, Phase 1 item 2). -->
         <Border DockPanel.Dock="Bottom"
+                x:Name="ProblemsBorder"
                 Height="160"
                 Background="{DynamicResource BgSurfaceBrush}"
                 BorderBrush="{DynamicResource BgSurfaceRaisedBrush}"
@@ -88,6 +114,7 @@
              it into the editor via the same LoadFileIntoEditor path used by
              File > Open File. -->
         <Border DockPanel.Dock="Left"
+                x:Name="SidebarBorder"
                 Width="220"
                 Background="{DynamicResource BgSurfaceBrush}"
                 BorderBrush="{DynamicResource BgSurfaceRaisedBrush}"

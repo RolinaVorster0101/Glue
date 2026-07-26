@@ -13,6 +13,7 @@ using Avalonia.Threading;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
+using AvaloniaEdit.Search;
 using Avalonia.VisualTree;
 using Glue.Models;
 using Glue.Services;
@@ -24,6 +25,7 @@ public partial class MainWindow : Window
 {
     private string? _currentFilePath;
     private FoldingManager? _foldingManager;
+    private SearchPanel? _searchPanel;
 
     // Debounce timer: re-analyze (diagnostics + folding) ~500ms after the
     // user stops typing, rather than on every keystroke.
@@ -43,6 +45,12 @@ public partial class MainWindow : Window
         Editor.SyntaxHighlighting = glueCSharpHighlighting;
 
         _foldingManager = FoldingManager.Install(Editor.TextArea);
+
+        // Real find (highlighting, next/prev), via AvaloniaEdit's built-in
+        // SearchPanel — also wires Ctrl+F automatically. Its stock UI is
+        // find-only; there's no built-in replace box (see the Edit menu
+        // comment in MainWindow.axaml for the follow-up note on Replace).
+        _searchPanel = SearchPanel.Install(Editor);
 
         // Fixes a template-priority margin that can't be overridden via XAML
         // styling alone — see AdjustChevronContainerMargins() for the full
@@ -167,16 +175,75 @@ public partial class MainWindow : Window
 
     private void OnFormatDocumentClicked(object? sender, RoutedEventArgs e) => FormatDocument();
 
+    /// <summary>
+    /// Handles keyboard shortcuts that AvaloniaEdit doesn't already provide
+    /// natively. Deliberately NOT intercepting Ctrl+Z/Ctrl+Y (Undo/Redo) or
+    /// Ctrl+F (Find) here — AvaloniaEdit's TextEditor and the installed
+    /// SearchPanel already wire those internally; re-handling them here risks
+    /// double-firing or breaking their built-in behavior.
+    ///
+    /// These are single-key-combo shortcuts, same placeholder situation as
+    /// Ctrl+Alt+F for Format Document — full keybinding infrastructure
+    /// (rebindable, chord-capable) arrives with the Command Palette/Settings
+    /// work later (docs/ROADMAP.md, section 2.15).
+    /// </summary>
     private void OnWindowKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
     {
-        var isCtrlAltF = e.Key == Avalonia.Input.Key.F
-            && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)
-            && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Alt);
+        var ctrl = e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control);
+        var alt = e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Alt);
+        var shift = e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift);
 
-        if (isCtrlAltF)
+        switch (e.Key)
         {
-            FormatDocument();
-            e.Handled = true;
+            case Avalonia.Input.Key.F when ctrl && alt:
+                FormatDocument();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.N when ctrl:
+                NewFile();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.S when ctrl && shift:
+                _ = SaveAsAsync();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.S when ctrl:
+                _ = SaveAsync();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.Up when alt:
+                MoveLine(-1);
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.Down when alt:
+                MoveLine(1);
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.D when ctrl:
+                DuplicateLine();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.OemQuestion when ctrl: // Ctrl+/
+                ToggleLineComment();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.B when ctrl:
+                ToggleSidebar();
+                e.Handled = true;
+                break;
+
+            case Avalonia.Input.Key.J when ctrl:
+                TogglePanel();
+                e.Handled = true;
+                break;
         }
     }
 
@@ -338,27 +405,192 @@ public partial class MainWindow : Window
         await LoadFileIntoEditorAsync(files[0].Path.LocalPath);
     }
 
-    private async void OnSaveClicked(object? sender, RoutedEventArgs e)
+    private async void OnSaveClicked(object? sender, RoutedEventArgs e) => await SaveAsync();
+
+    private async void OnSaveAsClicked(object? sender, RoutedEventArgs e) => await SaveAsAsync();
+
+    private async void OnSaveAllClicked(object? sender, RoutedEventArgs e) => await SaveAsync();
+
+    private async void OnNewFileClicked(object? sender, RoutedEventArgs e) => NewFile();
+
+    /// <summary>
+    /// Prompts to save if there's no current file path yet, otherwise saves
+    /// straight to it. Shared by File > Save, the Ctrl+S shortcut, and
+    /// File > Save All (which is currently identical — see the XAML comment).
+    /// </summary>
+    private async Task SaveAsync()
     {
         if (_currentFilePath is null)
         {
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel is null) return;
-
-            var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Save File",
-                SuggestedFileName = "Untitled.cs"
-            });
-
-            if (file is null) return;
-            _currentFilePath = file.Path.LocalPath;
+            await SaveAsAsync();
+            return;
         }
 
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
         UpdateStatus(_currentFilePath);
         ReanalyzeCurrentFile(restoreFoldState: false);
         SaveFoldStateForCurrentFile();
+    }
+
+    /// <summary>Always prompts for a save location, even if a file is already open.</summary>
+    private async Task SaveAsAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save As",
+            SuggestedFileName = _currentFilePath is not null ? Path.GetFileName(_currentFilePath) : "Untitled.cs"
+        });
+
+        if (file is null) return;
+
+        _currentFilePath = file.Path.LocalPath;
+        await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
+        UpdateStatus(_currentFilePath);
+        ReanalyzeCurrentFile(restoreFoldState: false);
+        SaveFoldStateForCurrentFile();
+    }
+
+    private void NewFile()
+    {
+        SaveFoldStateForCurrentFile();
+        _currentFilePath = null;
+        Editor.Text = string.Empty;
+        Editor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".cs");
+        UpdateStatus("Untitled.cs (unsaved)");
+        ReanalyzeCurrentFile(restoreFoldState: false);
+    }
+
+    private void OnUndoClicked(object? sender, RoutedEventArgs e) => Editor.Undo();
+
+    private void OnRedoClicked(object? sender, RoutedEventArgs e) => Editor.Redo();
+
+    private void OnFindClicked(object? sender, RoutedEventArgs e) => _searchPanel?.Open();
+
+    private void OnMoveLineUpClicked(object? sender, RoutedEventArgs e) => MoveLine(-1);
+
+    private void OnMoveLineDownClicked(object? sender, RoutedEventArgs e) => MoveLine(1);
+
+    private void OnDuplicateLineClicked(object? sender, RoutedEventArgs e) => DuplicateLine();
+
+    private void OnToggleCommentClicked(object? sender, RoutedEventArgs e) => ToggleLineComment();
+
+    private void OnToggleSidebarClicked(object? sender, RoutedEventArgs e) => ToggleSidebar();
+
+    private void OnTogglePanelClicked(object? sender, RoutedEventArgs e) => TogglePanel();
+
+    private void ToggleSidebar() => SidebarBorder.IsVisible = !SidebarBorder.IsVisible;
+
+    private void TogglePanel() => ProblemsBorder.IsVisible = !ProblemsBorder.IsVisible;
+
+    /// <summary>
+    /// Swaps the current line's text with the line above/below (direction:
+    /// -1 = up, +1 = down). Done as a single Document.Replace over the
+    /// combined span of both lines, rather than two separate Replace calls —
+    /// two calls at pre-computed offsets would go stale after the first one
+    /// if the two lines have different lengths.
+    /// </summary>
+    private void MoveLine(int direction)
+    {
+        var document = Editor.Document;
+        var caret = Editor.TextArea.Caret;
+
+        var currentLineNumber = caret.Line;
+        var otherLineNumber = currentLineNumber + direction;
+        if (otherLineNumber < 1 || otherLineNumber > document.LineCount) return;
+
+        var topLineNumber = Math.Min(currentLineNumber, otherLineNumber);
+        var bottomLineNumber = Math.Max(currentLineNumber, otherLineNumber);
+
+        var topLine = document.GetLineByNumber(topLineNumber);
+        var bottomLine = document.GetLineByNumber(bottomLineNumber);
+
+        var topText = document.GetText(topLine.Offset, topLine.Length);
+        var bottomText = document.GetText(bottomLine.Offset, bottomLine.Length);
+        var between = document.GetText(
+            topLine.Offset + topLine.Length,
+            bottomLine.Offset - (topLine.Offset + topLine.Length));
+
+        var combinedStart = topLine.Offset;
+        var combinedLength = (bottomLine.Offset + bottomLine.Length) - combinedStart;
+
+        document.Replace(combinedStart, combinedLength, bottomText + between + topText);
+
+        caret.Line = otherLineNumber;
+    }
+
+    private void DuplicateLine()
+    {
+        var document = Editor.Document;
+        var line = document.GetLineByNumber(Editor.TextArea.Caret.Line);
+
+        // Include the line's own delimiter (newline) so the duplicate lands
+        // on its own line rather than merging into the original.
+        var totalLength = line.Length + line.DelimiterLength;
+        var lineTextWithDelimiter = document.GetText(line.Offset, totalLength);
+
+        document.Insert(line.Offset, lineTextWithDelimiter);
+    }
+
+    /// <summary>
+    /// Toggles "// " line comments for the current line (or every line the
+    /// selection touches). C#-only for now, matching Glue's current
+    /// single-language stage — per-language comment syntax arrives with
+    /// Phase 5's multi-language support.
+    /// </summary>
+    private void ToggleLineComment()
+    {
+        var document = Editor.Document;
+        var selection = Editor.TextArea.Selection;
+
+        int startLine, endLine;
+        if (selection.IsEmpty)
+        {
+            startLine = endLine = Editor.TextArea.Caret.Line;
+        }
+        else
+        {
+            var segment = selection.SurroundingSegment!;
+            startLine = document.GetLineByOffset(segment.Offset).LineNumber;
+            endLine = document.GetLineByOffset(segment.EndOffset).LineNumber;
+        }
+
+        // If every touched line is already commented, uncomment all of them;
+        // otherwise comment all of them (matches the usual toggle-comment feel).
+        var allCommented = true;
+        for (var i = startLine; i <= endLine; i++)
+        {
+            var line = document.GetLineByNumber(i);
+            var text = document.GetText(line.Offset, line.Length);
+            if (!text.TrimStart().StartsWith("//", StringComparison.Ordinal))
+            {
+                allCommented = false;
+                break;
+            }
+        }
+
+        for (var i = startLine; i <= endLine; i++)
+        {
+            var line = document.GetLineByNumber(i);
+            var text = document.GetText(line.Offset, line.Length);
+
+            if (allCommented)
+            {
+                var idx = text.IndexOf("//", StringComparison.Ordinal);
+                if (idx < 0) continue;
+
+                var removeLength = 2;
+                if (idx + 2 < text.Length && text[idx + 2] == ' ') removeLength = 3;
+                document.Remove(line.Offset + idx, removeLength);
+            }
+            else
+            {
+                var indent = text.Length - text.TrimStart().Length;
+                document.Insert(line.Offset + indent, "// ");
+            }
+        }
     }
 
     private void OnExitClicked(object? sender, RoutedEventArgs e)

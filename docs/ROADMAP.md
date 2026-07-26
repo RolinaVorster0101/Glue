@@ -331,28 +331,30 @@ A single place to manage the IDE itself, rather than hand-editing config files:
 23. CSS/SCSS/LESS support via `vscode-css-languageservice`-based LSP server, enabling CSS Quick Actions (media queries, pseudo-states, dark mode)
 
 **Phase 6 — Polish & extras**
-24. Solution Explorer refinement, NuGet UI, Git integration
-25. Test Explorer
-26. Snippets, Task List, Bookmarks
-27. Persisted fold state, themes, further UX polish
-28. Full menu/shell polish: Open Recent, Auto Save, Multi-cursor commands, Split Editor, Zoom, Full Screen
-29. Keyboard Shortcuts editor, Color Theme picker, Extensions manager (Settings page expansion)
+24. **Restyle shell to activity-rail layout per docs/STYLEGUIDE.md** — replace the classic File/Edit/View menu bar with an icon-only activity rail (Explorer, Search, Git, Run, Extensions, etc.), top bar with breadcrumbs/search/action icons, and panels that swap based on the selected activity icon, matching the reference mockup. Phase 1–5 build functionality first with plain menus deliberately, to avoid fighting layout and logic simultaneously — this is the single focused visual pass once most functionality exists, rather than restyling piecemeal as each feature lands.
+25. Solution Explorer refinement, NuGet UI, Git integration
+26. Test Explorer
+27. Snippets, Task List, Bookmarks
+28. Persisted fold state, themes, further UX polish
+29. Full menu/shell polish: Open Recent, Auto Save, Multi-cursor commands, Split Editor, Zoom, Full Screen
+30. Keyboard Shortcuts editor, Color Theme picker, Extensions manager (Settings page expansion)
 
 **Phase 7 — Advisory Analysis Layer**
-30. Tier 1: surface existing Roslyn/LSP diagnostics in a unified panel
-31. Tier 2: LLM advisory call (file + context → structured findings with `example_code`, not silent rewrites)
-32. UI for reviewable, opt-in fix application per finding
+31. Tier 1: surface existing Roslyn/LSP diagnostics in a unified panel
+32. Tier 2: LLM advisory call (file + context → structured findings with `example_code`, not silent rewrites)
+33. UI for reviewable, opt-in fix application per finding
 
 **Phase 8 — Database, Git/GitHub, and Secrets**
-33. `IDbProvider` abstraction + MySQL provider first (schema browser, query editor, results grid)
-34. ER diagrams, EXPLAIN visualization, additional providers (Postgres/SQL Server/SQLite) as needed
-35. LibGit2Sharp integration: commit/stage/branch/diff buttons
-36. Octokit integration: New Repo dialog, OAuth device flow, Sync button
-37. Secrets Manager: Credential Manager storage, project-scoped panel, Tier 1 hardcoded-secret linting rule, LLM-isolation boundary verified (no reference from Advisory Layer code)
+34. `IDbProvider` abstraction + MySQL provider first (schema browser, query editor, results grid)
+35. ER diagrams, EXPLAIN visualization, additional providers (Postgres/SQL Server/SQLite) as needed
+36. LibGit2Sharp integration: commit/stage/branch/diff buttons
+37. Octokit integration: New Repo dialog, OAuth device flow, Sync button
+38. Secrets Manager: Credential Manager storage, project-scoped panel, Tier 1 hardcoded-secret linting rule, LLM-isolation boundary verified (no reference from Advisory Layer code)
 
 **Phase 9 — Autonomous Agent Layer (optional, last)**
-38. Agent task runner: plan → write → build/test → report via artifact
-40. Browser-in-the-loop verification
+39. Agent task runner: plan → write → build/test → report via artifact
+40. Multi-agent workspaces for parallel tasks
+41. Browser-in-the-loop verification
 
 ---
 
