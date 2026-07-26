@@ -228,9 +228,27 @@
                     </TreeView.Styles>
                     <TreeView.ItemTemplate>
                         <TreeDataTemplate x:DataType="models:FileTreeNode" ItemsSource="{Binding Children}">
-                            <TextBlock Text="{Binding Name}"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="12" />
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <!-- Two overlapping TextBlocks (visibility-swapped by
+                                     IsModified/IsNotModified) rather than a converter —
+                                     Foreground needs a DynamicResource for the normal
+                                     case, which a simple bool converter can't reach
+                                     cleanly. Plain bool bindings avoid relying on any
+                                     "!Property" binding-path negation syntax we haven't
+                                     verified is supported.
+                                     Deliberately subtle (ModifiedTextBrush, not the
+                                     strong WarningBrush) — this is visible constantly
+                                     during normal editing, not just for real warnings.
+                                     No dot indicator — color alone, kept minimal. -->
+                                <TextBlock Text="{Binding Name}"
+                                           IsVisible="{Binding IsNotModified}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="12" />
+                                <TextBlock Text="{Binding Name}"
+                                           IsVisible="{Binding IsModified}"
+                                           Foreground="{DynamicResource ModifiedTextBrush}"
+                                           FontSize="12" />
+                            </StackPanel>
                         </TreeDataTemplate>
                     </TreeView.ItemTemplate>
                 </TreeView>

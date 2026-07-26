@@ -175,6 +175,31 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Walks the Explorer tree (if one is loaded) and marks each node's
+    /// IsModified based on real state: the currently open file if it's
+    /// dirty, or any file sitting in _pendingFileChanges. Call this any
+    /// time dirty state could have changed — typing (via the debounce
+    /// timer), Save/Save All, Rename applying pending changes, opening a
+    /// different file, or rebuilding the tree itself (Open Folder/Project).
+    /// </summary>
+    private void UpdateModifiedIndicators()
+    {
+        if (ExplorerTree.ItemsSource is not IEnumerable<FileTreeNode> roots) return;
+
+        void Walk(FileTreeNode node)
+        {
+            var isDirtyCurrentFile = IsCurrentFileDirty && _currentFilePath is not null
+                && string.Equals(node.FullPath, _currentFilePath, StringComparison.OrdinalIgnoreCase);
+
+            node.IsModified = isDirtyCurrentFile || _pendingFileChanges.ContainsKey(node.FullPath);
+
+            foreach (var child in node.Children) Walk(child);
+        }
+
+        foreach (var root in roots) Walk(root);
+    }
+
+    /// <summary>
     /// If the currently open file has unsaved changes, asks whether to save,
     /// discard, or cancel — returns false only on Cancel, meaning whatever
     /// the caller was about to do (switch to a different file) should be
@@ -246,6 +271,13 @@ public partial class MainWindow : Window
     /// </param>
     private async Task ReanalyzeCurrentFile(bool restoreFoldState)
     {
+        // Called unconditionally, first — every dirty-state change (typing,
+        // save, rename, opening a different file) already routes through
+        // this method somewhere, so this is the one place that reliably
+        // keeps the Explorer tree's modified indicators in sync, regardless
+        // of file type or which early-return path below gets taken.
+        UpdateModifiedIndicators();
+
         if (!IsCSharpFile)
         {
             ProblemsList.ItemsSource = null;
@@ -497,6 +529,11 @@ public partial class MainWindow : Window
         // TreeView.ItemsSource expects a collection of roots, even though we
         // only ever have one — a single opened folder.
         ExplorerTree.ItemsSource = new[] { rootNode };
+
+        // Keeps modified indicators correct on the freshly built tree too —
+        // OnOpenProjectClicked already did this, this was the one tree-
+        // rebuild path that didn't.
+        await ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
     /// <summary>

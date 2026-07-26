@@ -24,6 +24,12 @@
     <!-- Semantic status -->
     <Color x:Key="SuccessColor">#3FB950</Color>
     <Color x:Key="WarningColor">#D29922</Color>
+    <!-- Matches GlueCSharp.xshd's "Method" syntax color (#DCDCAA, a soft
+         gold/tan) — used for the Explorer tree's modified-file indicator,
+         per direct request to match that tone. (Corrected once already:
+         first tried the "Type" teal by mistake — the words actually pointed
+         at were method/constructor names, which this xshd colors gold.) -->
+    <Color x:Key="ModifiedTextColor">#DCDCAA</Color>
     <Color x:Key="DangerColor">#F85149</Color>
     <Color x:Key="InfoColor">#58A6FF</Color>
 
@@ -42,6 +48,7 @@
 
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="ModifiedTextBrush" Color="{StaticResource ModifiedTextColor}" />
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
     <SolidColorBrush x:Key="InfoBrush" Color="{StaticResource InfoColor}" />
 
