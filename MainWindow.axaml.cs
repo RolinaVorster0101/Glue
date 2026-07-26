@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private FoldingManager? _foldingManager;
     private SearchPanel? _searchPanel;
     private CompletionWindow? _completionWindow;
+    private readonly RoslynProjectService _projectService = new();
 
     // Debounce timer: re-analyze (diagnostics + folding) ~500ms after the
     // user stops typing, rather than on every keystroke.
@@ -337,6 +338,45 @@ public partial class MainWindow : Window
         // TreeView.ItemsSource expects a collection of roots, even though we
         // only ever have one — a single opened folder.
         ExplorerTree.ItemsSource = new[] { rootNode };
+    }
+
+    /// <summary>
+    /// First testable milestone for true project parsing (Phase 1 item 2) —
+    /// loads a .csproj via MSBuildWorkspace and reports success/failure via
+    /// the status bar. Deliberately NOT yet wired into diagnostics or
+    /// completion — that's the next step once this is confirmed working.
+    /// MSBuild integration has a real track record of assembly-loading
+    /// quirks, worth isolating and testing on its own first.
+    /// </summary>
+    private async void OnOpenProjectClicked(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open Project",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("C# Project") { Patterns = new[] { "*.csproj" } }
+            }
+        });
+
+        if (files.Count == 0) return;
+
+        UpdateStatus("Loading project...");
+
+        try
+        {
+            var project = await _projectService.OpenProjectAsync(files[0].Path.LocalPath);
+            var docCount = project?.Documents.Count() ?? 0;
+            UpdateStatus($"Project loaded: {project?.Name} ({docCount} file(s))");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus($"Project load failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     /// <summary>
