@@ -88,6 +88,9 @@
                 <MenuItem Header="_Run Project (Ctrl+F5)" Click="OnRunProjectClicked" />
                 <MenuItem Header="_Stop" Click="OnStopRunClicked" />
             </MenuItem>
+            <MenuItem Header="_Tools" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="_Settings... (Ctrl+,)" Click="OnSettingsClicked" />
+            </MenuItem>
         </Menu>
 
         <!-- Status bar: per the style guide, this is the one place a solid

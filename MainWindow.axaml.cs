@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly RoslynProjectService _projectService = new();
     private CancellationTokenSource? _runCancellation;
     private readonly TerminalService _terminalService = new();
+    private GlueSettings _settings = SettingsService.Load();
 
     // Snapshot of what's actually on disk for _currentFilePath (or "" for a
     // new/unsaved file), used to detect unsaved changes in the open editor.
@@ -71,6 +72,8 @@ public partial class MainWindow : Window
             "Glue C#", new[] { ".cs" }, glueCSharpHighlighting);
 
         Editor.SyntaxHighlighting = glueCSharpHighlighting;
+
+        ApplySettingsToEditor();
 
         _foldingManager = FoldingManager.Install(Editor.TextArea);
 
@@ -475,6 +478,11 @@ public partial class MainWindow : Window
                 OnCommandPaletteClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Avalonia.Input.Key.OemComma when ctrl:
+                OnSettingsClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -830,6 +838,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Format on Save (Services/SettingsService.cs) — only for C# files,
+        // same guard as manual Format Document, since running the C#
+        // formatter on a non-C# file would corrupt it.
+        if (_settings.FormatOnSave && IsCSharpFile)
+        {
+            await FormatDocument();
+        }
+
         await File.WriteAllTextAsync(_currentFilePath, Editor.Text);
         _lastSavedText = Editor.Text;
         UpdateStatus(_currentFilePath);
@@ -906,6 +922,39 @@ public partial class MainWindow : Window
         await ReanalyzeCurrentFile(restoreFoldState: false);
     }
 
+    /// <summary>
+    /// Applies the currently loaded settings to the live editor — font,
+    /// size, and indentation options. Called at startup and again after
+    /// Settings is saved, so changes take effect immediately.
+    /// </summary>
+    private void ApplySettingsToEditor()
+    {
+        Editor.FontFamily = _settings.FontFamily;
+        Editor.FontSize = _settings.FontSize;
+        Editor.Options.IndentationSize = _settings.IndentationSize;
+        Editor.Options.ConvertTabsToSpaces = _settings.ConvertTabsToSpaces;
+    }
+
+    /// <summary>
+    /// Opens Views/SettingsDialog.axaml with the current settings, saves and
+    /// re-applies them if confirmed. Deliberately scoped to what's actually
+    /// functional right now (editor font/indentation, Format on Save) —
+    /// see Services/SettingsService.cs's doc comment for why the bigger
+    /// Settings page described in docs/ROADMAP.md isn't all here yet.
+    /// </summary>
+    private async void OnSettingsClicked(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsDialog(_settings);
+        var newSettings = await dialog.ShowDialog<GlueSettings?>(this);
+
+        if (newSettings is null) return;
+
+        _settings = newSettings;
+        SettingsService.Save(_settings);
+        ApplySettingsToEditor();
+        UpdateStatus("Settings saved");
+    }
+
     private void OnFocusTerminalClicked(object? sender, RoutedEventArgs e)
     {
         BottomPanelTabs.SelectedIndex = 3; // Terminal tab
@@ -969,6 +1018,7 @@ public partial class MainWindow : Window
             new("Build Project", () => OnBuildProjectClicked(this, e)),
             new("Run Project", () => OnRunProjectClicked(this, e)),
             new("Stop", () => OnStopRunClicked(this, e)),
+            new("Settings...", () => OnSettingsClicked(this, e)),
         };
     }
 

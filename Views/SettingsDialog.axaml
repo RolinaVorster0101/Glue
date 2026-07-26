@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Glue.Views.SettingsDialog"
+        Title="Settings"
+        Width="380" Height="480"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource BgSurfaceBrush}">
+
+    <StackPanel Margin="16" Spacing="10">
+        <TextBlock Text="EDITOR"
+                   FontSize="11" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
+
+        <TextBlock Text="Font family" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBox x:Name="FontFamilyBox" />
+
+        <TextBlock Text="Font size" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBox x:Name="FontSizeBox" />
+
+        <TextBlock Text="Indentation size (spaces)" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBox x:Name="IndentationSizeBox" />
+
+        <CheckBox x:Name="ConvertTabsCheckBox"
+                  Content="Convert tabs to spaces"
+                  Foreground="{DynamicResource TextPrimaryBrush}" />
+
+        <TextBlock Text="FORMATTING"
+                   FontSize="11" FontWeight="SemiBold"
+                   Margin="0,8,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
+
+        <CheckBox x:Name="FormatOnSaveCheckBox"
+                  Content="Format Document automatically on Save"
+                  Foreground="{DynamicResource TextPrimaryBrush}" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button Content="Cancel" Click="OnCancelClicked" />
+            <Button Content="Save" Click="OnSaveClicked" />
+        </StackPanel>
+    </StackPanel>
+
+</Window>
