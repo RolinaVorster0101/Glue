@@ -64,6 +64,8 @@
                 <MenuItem Header="_Format Document" InputGesture="Ctrl+Alt+F" Click="OnFormatDocumentClicked" />
             </MenuItem>
             <MenuItem Header="_View" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="_Command Palette (Ctrl+Shift+P)" Click="OnCommandPaletteClicked" />
+                <Separator />
                 <MenuItem Header="Toggle _Sidebar" InputGesture="Ctrl+B" Click="OnToggleSidebarClicked" />
                 <MenuItem Header="Toggle _Panel" InputGesture="Ctrl+J" Click="OnTogglePanelClicked" />
                 <MenuItem Header="Focus _Terminal (Ctrl+`)" Click="OnFocusTerminalClicked" />

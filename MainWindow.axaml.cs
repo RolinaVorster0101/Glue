@@ -470,6 +470,11 @@ public partial class MainWindow : Window
                 OnFocusTerminalClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Avalonia.Input.Key.P when ctrl && shift:
+                OnCommandPaletteClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -905,6 +910,66 @@ public partial class MainWindow : Window
     {
         BottomPanelTabs.SelectedIndex = 3; // Terminal tab
         TerminalInput.Focus();
+    }
+
+    /// <summary>
+    /// Opens the command palette (Views/CommandPaletteDialog.axaml) with
+    /// every command currently wired in Glue, and runs whichever one gets
+    /// chosen. Execute happens AFTER the dialog closes — several commands
+    /// (Rename, Extract Method) open their own dialog, and running that
+    /// while the palette dialog is still on screen would stack dialogs
+    /// awkwardly.
+    /// </summary>
+    private async void OnCommandPaletteClicked(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new CommandPaletteDialog(BuildCommandPaletteItems());
+        var selected = await dialog.ShowDialog<CommandPaletteItem?>(this);
+        selected?.Execute();
+    }
+
+    /// <summary>
+    /// Every command currently reachable via a menu item, wrapped so the
+    /// palette can run it. New commands should be added here as they're
+    /// built — this is meant to grow alongside the rest of the app, per
+    /// docs/ROADMAP.md section 2.15's "every new feature registers itself
+    /// here as it's added."
+    /// </summary>
+    private List<CommandPaletteItem> BuildCommandPaletteItems()
+    {
+        var e = new RoutedEventArgs();
+
+        return new List<CommandPaletteItem>
+        {
+            new("New File", () => OnNewFileClicked(this, e)),
+            new("Open Folder...", () => OnOpenFolderClicked(this, e)),
+            new("Open Project (.csproj)...", () => OnOpenProjectClicked(this, e)),
+            new("Open File...", () => OnOpenClicked(this, e)),
+            new("Save", () => OnSaveClicked(this, e)),
+            new("Save As...", () => OnSaveAsClicked(this, e)),
+            new("Save All", () => OnSaveAllClicked(this, e)),
+            new("Exit", () => OnExitClicked(this, e)),
+            new("Undo", () => OnUndoClicked(this, e)),
+            new("Redo", () => OnRedoClicked(this, e)),
+            new("Find...", () => OnFindClicked(this, e)),
+            new("Move Line Up", () => OnMoveLineUpClicked(this, e)),
+            new("Move Line Down", () => OnMoveLineDownClicked(this, e)),
+            new("Duplicate Line", () => OnDuplicateLineClicked(this, e)),
+            new("Toggle Line Comment", () => OnToggleCommentClicked(this, e)),
+            new("Go to Definition", () => OnGoToDefinitionClicked(this, e)),
+            new("Find All References", () => OnFindAllReferencesClicked(this, e)),
+            new("Rename Symbol", () => OnRenameSymbolClicked(this, e)),
+            new("Extract Method", () => OnExtractMethodClicked(this, e)),
+            new("Trigger Suggestion (Completion)", () => OnTriggerCompletionClicked(this, e)),
+            new("Format Document", () => OnFormatDocumentClicked(this, e)),
+            new("Toggle Sidebar", () => OnToggleSidebarClicked(this, e)),
+            new("Toggle Panel", () => OnTogglePanelClicked(this, e)),
+            new("Focus Terminal", () => OnFocusTerminalClicked(this, e)),
+            new("Expand All", () => OnExpandAllClicked(this, e)),
+            new("Collapse All", () => OnCollapseAllClicked(this, e)),
+            new("Build Project", () => OnBuildProjectClicked(this, e)),
+            new("Run Project", () => OnRunProjectClicked(this, e)),
+            new("Stop", () => OnStopRunClicked(this, e)),
+        };
     }
 
     /// <summary>
