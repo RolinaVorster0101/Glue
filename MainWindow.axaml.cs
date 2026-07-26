@@ -79,9 +79,23 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// True for .cs files, and for the unsaved sample/new-file state (no path
+    /// yet, treated as C# since that's Glue's current default new-file type).
+    /// Roslyn diagnostics and folding are C#-specific — running them on an
+    /// opened .csproj, .json, etc. would parse that content AS C# and produce
+    /// nonsense errors (this was a real bug: opening Glue.csproj showed
+    /// "CS1525: Invalid expression term '&lt;'" because the XML was being fed
+    /// straight into the C# compiler).
+    /// </summary>
+    private bool IsCSharpFile =>
+        _currentFilePath is null ||
+        string.Equals(Path.GetExtension(_currentFilePath), ".cs", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Runs Roslyn analysis on the current editor text (single-file only —
     /// see the note in Services/RoslynDiagnosticsService.cs) and refreshes
-    /// both the Problems panel and the folding regions.
+    /// both the Problems panel and the folding regions. No-ops (and clears
+    /// both panels) for anything that isn't a C# file — see IsCSharpFile.
     /// </summary>
     /// <param name="restoreFoldState">
     /// True right after opening a file (apply previously saved collapsed
@@ -90,6 +104,14 @@ public partial class MainWindow : Window
     /// </param>
     private void ReanalyzeCurrentFile(bool restoreFoldState)
     {
+        if (!IsCSharpFile)
+        {
+            ProblemsList.ItemsSource = null;
+            ProblemsHeader.Text = "Problems";
+            _foldingManager?.UpdateFoldings(Enumerable.Empty<AvaloniaEdit.Folding.NewFolding>(), -1);
+            return;
+        }
+
         var results = RoslynDiagnosticsService.Analyze(Editor.Text, _currentFilePath);
         ProblemsList.ItemsSource = results.Select(ToDisplayItem).ToList();
         ProblemsHeader.Text = $"Problems ({results.Count})";
@@ -152,6 +174,10 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Formats the whole document via Roslyn (Services/RoslynFormattingService.cs).
+    /// Only applies to C# files — see IsCSharpFile. Running the C# formatter
+    /// on, say, a .csproj would attempt to parse XML as C# and corrupt it,
+    /// the same class of bug that affected diagnostics/folding.
+    ///
     /// Reformatting shifts offsets throughout the file, so fold state gets
     /// recomputed fresh afterward rather than preserved — any regions the
     /// user had manually collapsed before formatting will re-expand. That's
@@ -159,6 +185,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void FormatDocument()
     {
+        if (!IsCSharpFile) return;
+
         var caretOffset = Editor.CaretOffset;
 
         Editor.Text = RoslynFormattingService.Format(Editor.Text);
