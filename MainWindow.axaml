@@ -46,6 +46,11 @@
                 <MenuItem Header="_Duplicate Line" InputGesture="Ctrl+D" Click="OnDuplicateLineClicked" />
                 <MenuItem Header="Toggle Line _Comment (Ctrl+/)" Click="OnToggleCommentClicked" />
                 <Separator />
+                <!-- Requires a project loaded via File > Open Project — real
+                     cross-file navigation needs actual multiple documents,
+                     which single-file analysis doesn't have. -->
+                <MenuItem Header="_Go to Definition (Ctrl+Alt+G)" Click="OnGoToDefinitionClicked" />
+                <Separator />
                 <MenuItem Header="_Trigger Suggestion (Ctrl+Space)" Click="OnTriggerCompletionClicked" />
                 <Separator />
                 <!-- Ctrl+Alt+F is a placeholder single-key shortcut. A real VS-style

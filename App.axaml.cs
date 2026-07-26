@@ -21,8 +21,13 @@ public partial class App : Application
             desktop.MainWindow = new MainWindow();
 
 #if DEBUG
-            // F12 at runtime opens a live visual-tree inspector — use it to find
-            // exact internal control template part names instead of guessing.
+            // F12 opens DevTools. An attempt to move this to Ctrl+F12 via
+            // DevToolsOptions.Gesture didn't actually replace the default —
+            // both F12 and Ctrl+F12 ended up triggering it, suggesting the
+            // gesture is additive rather than a full override. Reverted to
+            // the plain default rather than keep guessing at internal
+            // behavior for a DEBUG-only convenience tool. Go to Definition
+            // uses Ctrl+Alt+G instead, to avoid the conflict entirely.
             desktop.MainWindow.AttachDevTools();
 #endif
         }

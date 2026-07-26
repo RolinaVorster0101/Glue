@@ -282,6 +282,11 @@ public partial class MainWindow : Window
                 OnRunProjectClicked(sender, new RoutedEventArgs());
                 e.Handled = true;
                 break;
+
+            case Avalonia.Input.Key.G when ctrl && alt:
+                OnGoToDefinitionClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
         }
     }
 
@@ -830,6 +835,69 @@ public partial class MainWindow : Window
             // "zero suggestions found".
             UpdateStatus($"Completion error: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Jumps to the definition of the symbol under the caret, via real
+    /// Roslyn symbol resolution against the loaded project (Services/
+    /// RoslynNavigationService.cs). Requires a project loaded via
+    /// File > Open Project — same restriction as diagnostics/completion's
+    /// project-aware path, and for the same reason (needs actual multiple
+    /// documents to navigate between).
+    /// </summary>
+    private async void OnGoToDefinitionClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!IsCSharpFile) return;
+
+        var projectDocument = _currentFilePath is not null
+            ? _projectService.FindDocument(_currentFilePath)
+            : null;
+
+        if (projectDocument is null)
+        {
+            UpdateStatus("Go to Definition: load a project via File > Open Project first");
+            return;
+        }
+
+        var definition = await RoslynNavigationService.FindDefinitionAsync(
+            projectDocument, Editor.Text, Editor.CaretOffset);
+
+        if (definition is null)
+        {
+            UpdateStatus("Go to Definition: no definition found at cursor");
+            return;
+        }
+
+        if (string.Equals(definition.FilePath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            // Same file — just move to it, no need to reload anything.
+            NavigateEditorTo(definition.Offset);
+        }
+        else
+        {
+            // Different file — load it first, then navigate. LoadFileIntoEditorAsync
+            // re-analyzes the newly opened file, which is exactly what we want here too.
+            await LoadFileIntoEditorAsync(definition.FilePath);
+            NavigateEditorTo(definition.Offset);
+        }
+    }
+
+    /// <summary>
+    /// Moves the caret to a character offset in the current editor content,
+    /// selecting the whole containing line so the jump is visually obvious —
+    /// same pattern as OnProblemDoubleTapped's Problems-panel navigation.
+    /// Shared here so Find References (a following step) can reuse it too.
+    /// </summary>
+    private void NavigateEditorTo(int offset)
+    {
+        offset = Math.Clamp(offset, 0, Editor.Text.Length);
+        var line = Editor.Document.GetLineByOffset(offset);
+
+        Editor.Focus();
+        Editor.CaretOffset = offset;
+        Editor.Select(line.Offset, line.Length);
+        Editor.ScrollToLine(line.LineNumber);
+        Editor.TextArea.Caret.BringCaretToView();
     }
 
     private void OnExitClicked(object? sender, RoutedEventArgs e)
