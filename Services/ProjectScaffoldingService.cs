@@ -23,12 +23,17 @@ public record ProjectTemplate(string Name, string Description, string Language, 
 
 /// <summary>
 /// Built-in templates and the logic to actually create a project from one.
-/// Only token substituted for now: {{ProjectName}}. House-style principles
-/// (no Bootstrap/jQuery, no legacy defaults) apply once web-facing templates
-/// are added — the two here (Console App, Class Library) don't have any
-/// front-end dependencies to avoid in the first place, so they're a proof
-/// of the mechanism, not yet a demonstration of the house-style opinion
-/// itself.
+/// Only token substituted for now: {{ProjectName}}.
+///
+/// Content shared across web templates (layout, site.css, scripts.js,
+/// .csproj, appsettings.json, the example model/service pair) uses "Web*"
+/// names rather than being duplicated per template — Razor Pages and MVC
+/// both reference the exact same WebLayoutContent/WebSiteCssContent/etc.
+/// Only the genuinely template-specific pieces (Program.cs, the actual
+/// pages/views/controllers) get their own constants.
+///
+/// House-style principles: no Bootstrap/jQuery ever, BEM naming for all
+/// CSS with an in-file guideline comment (see docs/ROADMAP.md section 2.3).
 /// </summary>
 public static class ProjectScaffoldingService
 {
@@ -65,21 +70,47 @@ public static class ProjectScaffoldingService
             {
                 new(".gitignore", GitIgnoreContent),
                 new("README.md", RazorPagesReadmeContent),
-                new("{{ProjectName}}.csproj", RazorPagesCsprojContent),
+                new("{{ProjectName}}.csproj", WebCsprojContent),
                 new("Program.cs", RazorPagesProgramCsContent),
-                new("appsettings.json", RazorPagesAppSettingsContent),
+                new("appsettings.json", WebAppSettingsContent),
                 new("Pages/_ViewImports.cshtml", RazorPagesViewImportsContent),
-                new("Pages/_ViewStart.cshtml", RazorPagesViewStartContent),
-                new("Pages/Shared/_Layout.cshtml", RazorPagesLayoutContent),
+                new("Pages/_ViewStart.cshtml", WebViewStartContent),
+                new("Pages/Shared/_Layout.cshtml", WebLayoutContent),
                 new("Pages/Index.cshtml", RazorPagesIndexCshtmlContent),
                 new("Pages/Index.cshtml.cs", RazorPagesIndexCsContent),
                 new("Pages/Error.cshtml", RazorPagesErrorCshtmlContent),
                 new("Pages/Error.cshtml.cs", RazorPagesErrorCsContent),
-                new("Models/ExampleModel.cs", RazorPagesExampleModelContent),
-                new("Services/IExampleService.cs", RazorPagesIExampleServiceContent),
-                new("Services/ExampleService.cs", RazorPagesExampleServiceContent),
-                new("wwwroot/css/site.css", RazorPagesSiteCssContent),
-                new("wwwroot/js/scripts.js", RazorPagesScriptsJsContent)
+                new("Models/ExampleModel.cs", WebExampleModelContent),
+                new("Services/IExampleService.cs", WebIExampleServiceContent),
+                new("Services/ExampleService.cs", WebExampleServiceContent),
+                new("wwwroot/css/site.css", WebSiteCssContent),
+                new("wwwroot/js/scripts.js", WebScriptsJsContent)
+            }),
+
+        new ProjectTemplate(
+            "ASP.NET Core MVC",
+            "An MVC web app — controllers + views, no Bootstrap, no jQuery, same house style as the " +
+            "Razor Pages template.",
+            "csharp",
+            new List<TemplateFile>
+            {
+                new(".gitignore", GitIgnoreContent),
+                new("README.md", MvcReadmeContent),
+                new("{{ProjectName}}.csproj", WebCsprojContent),
+                new("Program.cs", MvcProgramCsContent),
+                new("appsettings.json", WebAppSettingsContent),
+                new("Controllers/HomeController.cs", MvcHomeControllerContent),
+                new("Views/_ViewImports.cshtml", MvcViewImportsContent),
+                new("Views/_ViewStart.cshtml", WebViewStartContent),
+                new("Views/Shared/_Layout.cshtml", WebLayoutContent),
+                new("Views/Home/Index.cshtml", MvcIndexCshtmlContent),
+                new("Views/Shared/Error.cshtml", MvcErrorCshtmlContent),
+                new("Models/ErrorViewModel.cs", MvcErrorViewModelContent),
+                new("Models/ExampleModel.cs", WebExampleModelContent),
+                new("Services/IExampleService.cs", WebIExampleServiceContent),
+                new("Services/ExampleService.cs", WebExampleServiceContent),
+                new("wwwroot/css/site.css", WebSiteCssContent),
+                new("wwwroot/js/scripts.js", WebScriptsJsContent)
             }),
     };
 
@@ -158,7 +189,9 @@ public static class ProjectScaffoldingService
         }
         """;
 
-    private const string RazorPagesCsprojContent = """
+    // ---- Shared across every ASP.NET Core web template ----
+
+    private const string WebCsprojContent = """
         <Project Sdk="Microsoft.NET.Sdk.Web">
 
           <PropertyGroup>
@@ -170,32 +203,7 @@ public static class ProjectScaffoldingService
         </Project>
         """;
 
-    private const string RazorPagesProgramCsContent = """
-        var builder = WebApplication.CreateBuilder(args);
-
-        builder.Services.AddRazorPages();
-
-        var app = builder.Build();
-
-        if (!app.Environment.IsDevelopment())
-        {
-            app.UseExceptionHandler("/Error");
-            app.UseHsts();
-        }
-
-        app.UseHttpsRedirection();
-        app.UseStaticFiles();
-
-        app.UseRouting();
-
-        app.UseAuthorization();
-
-        app.MapRazorPages();
-
-        app.Run();
-        """;
-
-    private const string RazorPagesAppSettingsContent = """
+    private const string WebAppSettingsContent = """
         {
           "Logging": {
             "LogLevel": {
@@ -207,19 +215,13 @@ public static class ProjectScaffoldingService
         }
         """;
 
-    private const string RazorPagesViewImportsContent = """
-        @namespace {{ProjectName}}.Pages
-        @using {{ProjectName}}
-        @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
-        """;
-
-    private const string RazorPagesViewStartContent = """
+    private const string WebViewStartContent = """
         @{
             Layout = "_Layout";
         }
         """;
 
-    private const string RazorPagesLayoutContent = """
+    private const string WebLayoutContent = """
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -249,55 +251,7 @@ public static class ProjectScaffoldingService
         </html>
         """;
 
-    private const string RazorPagesIndexCshtmlContent = """
-        @page
-        @model IndexModel
-        @{
-            ViewData["Title"] = "Home";
-        }
-
-        <h1>Welcome to {{ProjectName}}</h1>
-        <p>This is your new Razor Pages project — no Bootstrap, no jQuery, just your own styles and vanilla JS when you need it.</p>
-        """;
-
-    private const string RazorPagesIndexCsContent = """
-        using Microsoft.AspNetCore.Mvc.RazorPages;
-
-        namespace {{ProjectName}}.Pages;
-
-        public class IndexModel : PageModel
-        {
-            public void OnGet()
-            {
-            }
-        }
-        """;
-
-    private const string RazorPagesErrorCshtmlContent = """
-        @page
-        @model ErrorModel
-        @{
-            ViewData["Title"] = "Error";
-        }
-
-        <h1>Error</h1>
-        <p>An error occurred while processing your request.</p>
-        """;
-
-    private const string RazorPagesErrorCsContent = """
-        using Microsoft.AspNetCore.Mvc.RazorPages;
-
-        namespace {{ProjectName}}.Pages;
-
-        public class ErrorModel : PageModel
-        {
-            public void OnGet()
-            {
-            }
-        }
-        """;
-
-    private const string RazorPagesSiteCssContent = """
+    private const string WebSiteCssContent = """
         /* =============================================
            TABLE OF CONTENTS
            1. Design Tokens
@@ -400,6 +354,132 @@ public static class ProjectScaffoldingService
         /* #endregion */
         """;
 
+    private const string WebScriptsJsContent = """
+        // {{ProjectName}} — base vanilla JS file. No jQuery, no framework —
+        // add your own code here as needed.
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Your code here.
+        });
+        """;
+
+    private const string WebExampleModelContent = """
+        namespace {{ProjectName}}.Models;
+
+        /// <summary>
+        /// Example model — replace or delete this once you add your own.
+        /// </summary>
+        public class ExampleModel
+        {
+            public int Id { get; set; }
+            public string Name { get; set; } = string.Empty;
+        }
+        """;
+
+    private const string WebIExampleServiceContent = """
+        namespace {{ProjectName}}.Services;
+
+        public interface IExampleService
+        {
+            string GetGreeting(string name);
+        }
+        """;
+
+    private const string WebExampleServiceContent = """
+        namespace {{ProjectName}}.Services;
+
+        /// <summary>
+        /// Example service — replace or delete this once you add your own.
+        /// Register it in Program.cs, e.g.:
+        ///   builder.Services.AddScoped&lt;IExampleService, ExampleService&gt;();
+        /// </summary>
+        public class ExampleService : IExampleService
+        {
+            public string GetGreeting(string name) => $"Hello, {name}!";
+        }
+        """;
+
+    // ---- Razor Pages specific ----
+
+    private const string RazorPagesProgramCsContent = """
+        var builder = WebApplication.CreateBuilder(args);
+
+        builder.Services.AddRazorPages();
+
+        var app = builder.Build();
+
+        if (!app.Environment.IsDevelopment())
+        {
+            app.UseExceptionHandler("/Error");
+            app.UseHsts();
+        }
+
+        app.UseHttpsRedirection();
+        app.UseStaticFiles();
+
+        app.UseRouting();
+
+        app.UseAuthorization();
+
+        app.MapRazorPages();
+
+        app.Run();
+        """;
+
+    private const string RazorPagesViewImportsContent = """
+        @namespace {{ProjectName}}.Pages
+        @using {{ProjectName}}
+        @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+        """;
+
+    private const string RazorPagesIndexCshtmlContent = """
+        @page
+        @model IndexModel
+        @{
+            ViewData["Title"] = "Home";
+        }
+
+        <h1>Welcome to {{ProjectName}}</h1>
+        <p>This is your new Razor Pages project — no Bootstrap, no jQuery, just your own styles and vanilla JS when you need it.</p>
+        """;
+
+    private const string RazorPagesIndexCsContent = """
+        using Microsoft.AspNetCore.Mvc.RazorPages;
+
+        namespace {{ProjectName}}.Pages;
+
+        public class IndexModel : PageModel
+        {
+            public void OnGet()
+            {
+            }
+        }
+        """;
+
+    private const string RazorPagesErrorCshtmlContent = """
+        @page
+        @model ErrorModel
+        @{
+            ViewData["Title"] = "Error";
+        }
+
+        <h1>Error</h1>
+        <p>An error occurred while processing your request.</p>
+        """;
+
+    private const string RazorPagesErrorCsContent = """
+        using Microsoft.AspNetCore.Mvc.RazorPages;
+
+        namespace {{ProjectName}}.Pages;
+
+        public class ErrorModel : PageModel
+        {
+            public void OnGet()
+            {
+            }
+        }
+        """;
+
     private const string RazorPagesReadmeContent = """
         # {{ProjectName}}
 
@@ -422,48 +502,109 @@ public static class ProjectScaffoldingService
         No Bootstrap, no jQuery — `wwwroot/css/site.css` and `wwwroot/js/scripts.js` are yours to build on.
         """;
 
-    private const string RazorPagesExampleModelContent = """
+    // ---- MVC specific ----
+
+    private const string MvcProgramCsContent = """
+        var builder = WebApplication.CreateBuilder(args);
+
+        builder.Services.AddControllersWithViews();
+
+        var app = builder.Build();
+
+        if (!app.Environment.IsDevelopment())
+        {
+            app.UseExceptionHandler("/Home/Error");
+            app.UseHsts();
+        }
+
+        app.UseHttpsRedirection();
+        app.UseStaticFiles();
+
+        app.UseRouting();
+
+        app.UseAuthorization();
+
+        app.MapControllerRoute(
+            name: "default",
+            pattern: "{controller=Home}/{action=Index}/{id?}");
+
+        app.Run();
+        """;
+
+    private const string MvcViewImportsContent = """
+        @using {{ProjectName}}
+        @using {{ProjectName}}.Models
+        @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+        """;
+
+    private const string MvcHomeControllerContent = """
+        using Microsoft.AspNetCore.Mvc;
+        using {{ProjectName}}.Models;
+
+        namespace {{ProjectName}}.Controllers;
+
+        public class HomeController : Controller
+        {
+            public IActionResult Index()
+            {
+                return View();
+            }
+
+            public IActionResult Error()
+            {
+                return View(new ErrorViewModel());
+            }
+        }
+        """;
+
+    private const string MvcIndexCshtmlContent = """
+        @{
+            ViewData["Title"] = "Home";
+        }
+
+        <h1>Welcome to {{ProjectName}}</h1>
+        <p>This is your new MVC project — no Bootstrap, no jQuery, just your own styles and vanilla JS when you need it.</p>
+        """;
+
+    private const string MvcErrorCshtmlContent = """
+        @model {{ProjectName}}.Models.ErrorViewModel
+        @{
+            ViewData["Title"] = "Error";
+        }
+
+        <h1>Error</h1>
+        <p>An error occurred while processing your request.</p>
+        """;
+
+    private const string MvcErrorViewModelContent = """
         namespace {{ProjectName}}.Models;
 
-        /// <summary>
-        /// Example model — replace or delete this once you add your own.
-        /// </summary>
-        public class ExampleModel
+        public class ErrorViewModel
         {
-            public int Id { get; set; }
-            public string Name { get; set; } = string.Empty;
+            public string? RequestId { get; set; }
         }
         """;
 
-    private const string RazorPagesIExampleServiceContent = """
-        namespace {{ProjectName}}.Services;
+    private const string MvcReadmeContent = """
+        # {{ProjectName}}
 
-        public interface IExampleService
-        {
-            string GetGreeting(string name);
-        }
-        """;
+        An ASP.NET Core MVC project, scaffolded with Glue.
 
-    private const string RazorPagesExampleServiceContent = """
-        namespace {{ProjectName}}.Services;
+        ## Getting started
 
-        /// <summary>
-        /// Example service — replace or delete this once you add your own.
-        /// Register it in Program.cs, e.g.:
-        ///   builder.Services.AddScoped&lt;IExampleService, ExampleService&gt;();
-        /// </summary>
-        public class ExampleService : IExampleService
-        {
-            public string GetGreeting(string name) => $"Hello, {name}!";
-        }
-        """;
+        ```bash
+        dotnet restore
+        dotnet run
+        ```
 
-    private const string RazorPagesScriptsJsContent = """
-        // {{ProjectName}} — base vanilla JS file. No jQuery, no framework —
-        // add your own code here as needed.
+        ## Project structure
 
-        document.addEventListener("DOMContentLoaded", () => {
-            // Your code here.
-        });
+        - `Controllers/` — MVC controllers
+        - `Views/` — Razor views
+        - `Models/` — data/domain models
+        - `Services/` — application services
+        - `wwwroot/` — static files (CSS, JS)
+
+        No Bootstrap, no jQuery — `wwwroot/css/site.css` and `wwwroot/js/scripts.js` are yours to build on.
         """;
 }
