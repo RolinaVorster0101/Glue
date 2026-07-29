@@ -230,8 +230,8 @@ public static class ProjectScaffoldingService
         </head>
         <body>
             <header class="site-header">
-                <nav class="site-nav">
-                    <a class="site-nav-brand" href="/">{{ProjectName}}</a>
+                <nav class="site-header__nav">
+                    <a class="site-header__brand" href="/">{{ProjectName}}</a>
                 </nav>
             </header>
 
@@ -240,7 +240,7 @@ public static class ProjectScaffoldingService
             </main>
 
             <footer class="site-footer">
-                <p>&copy; @DateTime.Now.Year - {{ProjectName}}</p>
+                <p class="site-footer__text">&copy; @DateTime.Now.Year - {{ProjectName}}</p>
             </footer>
 
             @await RenderSectionAsync("Scripts", required: false)
@@ -298,43 +298,106 @@ public static class ProjectScaffoldingService
         """;
 
     private const string RazorPagesSiteCssContent = """
-        /* {{ProjectName}} — house style starter stylesheet. No Bootstrap, ever. */
+        /* =============================================
+           TABLE OF CONTENTS
+           1. Design Tokens
+           2. Base / Reset
+           3. Layout
+           4. Navigation
+           5. Site Footer
+           ============================================= */
 
+        /* -----------------------------------------------
+           BEM NAMING CONVENTION
+           block__element--modifier
+
+           - Block: a standalone, reusable component (e.g. .site-header)
+           - Element: a part of a block, tied to it, never used alone
+             (e.g. .site-header__brand)
+           - Modifier: a variant/state of a block or element
+             (e.g. .site-header--transparent)
+
+           All elements use their block's name, regardless of how deeply
+           they're nested in the actual HTML — never chain more than one
+           __element (no block__element__subelement). This convention
+           applies across every Glue template that ships CSS, not just
+           this one.
+           ----------------------------------------------- */
+
+        /* #region 1. Design Tokens */
+        :root {
+          --color-bg: #ffffff;
+          --color-text: #1a1a1a;
+          --color-text-muted: #666;
+          --color-border: #e0e0e0;
+          --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        /* #endregion */
+
+        /* #region 2. Base / Reset */
         * {
-            box-sizing: border-box;
+          box-sizing: border-box;
         }
 
         body {
-            margin: 0;
-            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-            line-height: 1.5;
-            color: #1a1a1a;
-            background: #ffffff;
+          margin: 0; /* Removes the browser's default body margin */
+          font-family: var(--font-sans);
+          line-height: 1.5;
+          color: var(--color-text);
+          background: var(--color-bg);
+        }
+        /* #endregion */
+
+        /* #region 3. Layout */
+        /* Flexbox sticky footer: body becomes a full-height column flex
+           container, main grows to fill whatever space is left, footer
+           stays pinned to the bottom even on short pages. */
+        html, body {
+          height: 100%;
         }
 
-        .site-header {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .site-nav-brand {
-            font-weight: 600;
-            text-decoration: none;
-            color: inherit;
+        body {
+          display: flex;
+          flex-direction: column;
+          min-height: 100vh;
         }
 
         .site-main {
-            padding: 1.5rem;
-            max-width: 960px;
-            margin: 0 auto;
+          flex: 1 0 auto;
+          width: 100%;
+          padding: 1.5rem;
+          max-width: 960px;
+          margin: 0 auto;
+        }
+        /* #endregion */
+
+        /* #region 4. Navigation */
+        .site-header {
+          flex-shrink: 0;
+          padding: 1rem 1.5rem;
+          border-bottom: 1px solid var(--color-border);
         }
 
-        .site-footer {
-            padding: 1rem 1.5rem;
-            border-top: 1px solid #e0e0e0;
-            font-size: 0.875rem;
-            color: #666;
+        .site-header__brand {
+          font-weight: 600;
+          text-decoration: none;
+          color: inherit;
         }
+        /* #endregion */
+
+        /* #region 5. Site Footer */
+        .site-footer {
+          flex-shrink: 0;
+          padding: 1rem 1.5rem;
+          border-top: 1px solid var(--color-border);
+          font-size: 0.875rem;
+          color: var(--color-text-muted);
+        }
+
+        .site-footer__text {
+          margin: 0;
+        }
+        /* #endregion */
         """;
 
     private const string RazorPagesReadmeContent = """

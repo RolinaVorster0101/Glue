@@ -52,7 +52,7 @@
 - **✅ Built:** Go to Definition (`Ctrl+Alt+G`) / Find All References (`Ctrl+Alt+R`) / Rename (`F2`) — all via Roslyn's `SymbolFinder`/`Renamer` against the loaded project (`RoslynProjectService`/`MSBuildWorkspace`), not single-file guesswork. Rename shows a confirmation dialog listing every affected file before anything is written; changes to files other than the one currently open are held as **pending changes** (not written to disk) until Save All — see "2.2a Multi-file safety" below.
 - Peek Definition (inline, without leaving the file) — not yet built, Go to Definition currently always jumps/switches files
 - Call Hierarchy
-- Extract Method / Extract Variable — not yet built
+- **✅ Built:** Extract Method (`Ctrl+Alt+M`) — no equivalent public Roslyn API to Go to Definition/Find References/Rename's `SymbolFinder`/`Renamer`, so this one is hand-rolled using `SemanticModel.AnalyzeDataFlow` to infer parameters (variables flowing in) and return value (a single variable flowing out, if any). Scoped narrow: whole statements only, single method, 0-1 output variables (multiple would need a tuple return or out params, not attempted). Extract Variable — not yet built.
 - Quick Actions / lightbulb-style inline fixes (Roslyn analyzers + code fixes)
 - CodeLens-style inline annotations (reference counts, etc.)
 - **CSS Quick Actions** (right-click on a selector):
@@ -78,6 +78,8 @@ Glue currently edits one file at a time — opening a new file replaces the curr
   - **Custom template engine**: folder of boilerplate files + `template.json` manifest describing placeholder tokens (e.g. `{{ProjectName}}`, `{{Namespace}}`) and file copy rules
 - **House-style templates** (the actual differentiator):
   - No Bootstrap, no jQuery, ever — templates built from scratch, not stripped-down Microsoft defaults
+  - **Every template that ships CSS uses BEM naming** (`block__element--modifier`) — a short guideline comment explaining the convention lives at the top of the stylesheet itself (below the table of contents), not just in this doc, so anyone else working on the generated project sees it in context. Applies going forward to every CSS-shipping template (Razor Pages ✅, MVC, Blazor, React, etc.), not just the first one it was introduced on.
+  - CSS files also use a table-of-contents header + `#region`/`#endregion` comment markers grouping logical sections (Design Tokens, Base/Reset, Layout, Navigation, etc.) — same convention across templates
   - Your own conventions, defined once and reused everywhere: CSS naming, JS helper patterns (vanilla, no jQuery), comment header format — a personal style, not tied to any single employer's codebase
   - Broad language/framework coverage over time: C#/.NET (Razor Pages, MVC, Blazor), Node.js, React, TypeScript, Rust — general-purpose skill-building, not scoped to one job's tech stack
   - **A correct `.gitignore` is included automatically in every new project**, matched to the language/framework picked in the wizard (e.g. `bin/`/`obj/` for .NET, `node_modules/` for Node/React, `target/` for Rust) — this happens at local scaffolding time (2.3), independent of whether a GitHub repo is created later (2.13). One canonical `.gitignore` per template, kept in the template folder alongside `template.json`, so it never has to be remembered or added by hand.
@@ -99,6 +101,44 @@ Templates/
     template.json
     Plugin.cs
 ```
+
+**Full template list** (built incrementally — see checkmarks; the actual mechanism is `Services/ProjectScaffoldingService.cs`, expressed as C# records rather than a separate JSON manifest file for now, see that file's doc comment). Deliberate pacing: a couple of C#/.NET web templates come next since they're the ones where the "no Bootstrap/jQuery" house-style principle is actually visible, not just an abstract goal — the rest of this list gets picked up incrementally between other phases, not ground through all at once (scaffolding is comparatively low-risk/low-complexity work, a reasonable fill-in task between bigger features like the Advisory Layer or debugging).
+
+*C#/.NET:*
+- ✅ Console App
+- ✅ Class Library
+- ASP.NET Core Razor Pages
+- ASP.NET Core MVC
+- **ASP.NET Core MVC + Razor Pages (Hybrid)** — both conventions in one project (`AddControllersWithViews()` + `AddRazorPages()`, `Controllers/`+`Views/` alongside `Pages/`, one shared `_Layout.cshtml`) — a genuinely common real-world pattern, not an edge case
+- Blazor Server
+- Blazor WebAssembly (distinct hosting model from Server, own template)
+- ASP.NET Core Web API (controller-based)
+- Minimal API (endpoint-mapping style, no controllers)
+- Worker Service (long-running background service, no web front-end)
+- gRPC Service
+- xUnit Test Project
+- Avalonia Desktop App (a bit meta — Glue's own stack — but useful for scaffolding other desktop tools the same way)
+
+*Node.js / TypeScript / React:*
+- Node.js + Express API starter (TypeScript)
+- React + TypeScript component/app starter (no Bootstrap, own styling approach)
+- Vue.js + TypeScript starter
+
+*Python* (project scaffolding itself doesn't need Phase 5's LSP work — creating files is independent of language intelligence; a `.py` file just won't get live diagnostics/completion/navigation in Glue until `gopls`-equivalent Python support lands):
+- Plain Python script/project starter
+- FastAPI starter (matches the Fathom project's stack)
+
+*Rust:*
+- Rust Oxide/uMod plugin starter (directly useful for "From Dust to Rust ZA")
+
+*Go* (same LSP caveat as Python above):
+- Go CLI/module starter
+
+*Other web:*
+- Static HTML/CSS/JS site (no framework)
+
+*Once 2.4 (security snippets) exists:*
+- ASP.NET Core Razor Page with secure file upload pre-wired — demonstrates "security by default" in a real template, not just the abstract principle
 
 ### 2.4 Security-by-Default Snippets
 A tagged library of pre-vetted secure code blocks, auto-inserted when a scaffolding scenario matches a known-risky pattern.
@@ -148,7 +188,7 @@ Other categories: SQL (parameterized-only), Razor output encoding review flags, 
 - User-definable code snippets (e.g. `ctor` + Tab → constructor skeleton) — smaller-scale sibling of the template system
 - Task List: scans for `// TODO`, `// HACK` comments, lists in a panel
 - Bookmarks (independent of breakpoints)
-- Integrated terminal (embedded shell pane — PowerShell/bash)
+- **✅ Built:** Integrated terminal (`Ctrl+backtick`) — basic interactive shell (persistent PowerShell subprocess, plain text in/out via `TerminalService`). Deliberately not a full terminal emulator: no ANSI colors, no cursor repositioning, no full-screen apps (vim, htop). Bottom panel (this + Problems/Output/References) is resizable via a draggable `GridSplitter`.
 - IntelliCode-style AI suggestions (later-stage feature)
 
 ### 2.10 Advisory Analysis Layer (Tier 1 + Tier 2)
@@ -281,13 +321,17 @@ Standard IDE-shell basics that every other feature above assumes exist, but hadn
 
 *(Multi-tab editing — see section 2.2b for the full note; likely lands alongside Split Editor above, since both concern "more than one file open/visible at once.")*
 
-**Command Palette** (the important one)
-A fuzzy-searchable, keyboard-triggered (e.g. `Ctrl+Shift+P`) list of every command in the IDE — Format Document, New Repo, Add Secret, Run Advisory Check, everything. As the feature surface grows across menus/panels/shortcuts, this becomes the fastest way to reach anything without memorizing where it lives. Should be wired up as commands are built, not bolted on at the end — every new feature registers itself here as it's added.
+**Command Palette — ✅ Built** (`Ctrl+Shift+P`)
+Substring-filtered (not true fuzzy matching — a simpler, safer first pass), 28 commands currently registered covering every menu item in the app. Arrow keys navigate, Enter runs the selected command, Escape cancels. New commands get added to `BuildCommandPaletteItems()` in `MainWindow.axaml.cs` as they're built, per the original design intent below.
 
-**Tools/Preferences menu → Settings & Preferences page**
-A single place to manage the IDE itself, rather than hand-editing config files:
-- **Editor**: font/size, theme, tab size, default fold-state behavior, keybinding for Expand/Collapse All
-- **Formatting**: view/edit your `.editorconfig` house style directly from the UI
+**Tools/Preferences menu → Settings & Preferences page — ✅ Built, scoped** (`Ctrl+,`)
+The original design (below) described a much bigger page than what's actually buildable today — most categories don't have real functionality behind them yet. What's actually built and functional:
+- **Editor**: font family, font size, indentation size, convert-tabs-to-spaces — all take effect immediately, persisted to `%APPDATA%\Glue\settings.json`
+- **Formatting**: Format Document automatically on Save (toggle)
+
+Everything else below is the **original full design intent**, to be filled in as those features actually land — not placeholder settings for things that don't exist:
+- **Editor** (remaining): theme, default fold-state behavior, keybinding for Expand/Collapse All
+- **Formatting** (remaining): view/edit your `.editorconfig` house style directly from the UI
 - **CSS Quick Actions**: personal `breakpoints.json` defaults (Mobile/Tablet/Desktop values)
 - **Language servers**: configure paths to installed LSP/DAP binaries (`gopls`, `clangd`, `pyright`, etc.) once Phase 5 lands
 - **Templates**: default template folder location, manage/edit scaffolding templates
@@ -320,10 +364,12 @@ A single place to manage the IDE itself, rather than hand-editing config files:
 **Phase 2 — Build & navigate**
 7. ✅ Build integration — real `dotnet build` subprocess, live Output tab, `Ctrl+Shift+B`
 8. ✅ Run/launch integration — real `dotnet run` subprocess, live output, cancellable, `Ctrl+F5`
-9. ✅ Go to Definition (`Ctrl+Alt+G`), Find All References (`Ctrl+Alt+R`), Rename (`F2`, with confirmation + pending-changes safety — see 2.2a). **Extract Method still not built.**
-10. Integrated terminal — not yet built
-11. Command Palette — not yet built
-12. Settings & Preferences page — not yet built
+9. ✅ Go to Definition (`Ctrl+Alt+G`), Find All References (`Ctrl+Alt+R`), Rename (`F2`, with confirmation + pending-changes safety — see 2.2a), Extract Method (`Ctrl+Alt+M`, via `SemanticModel.AnalyzeDataFlow` — hand-rolled, no public Roslyn API for this one unlike the others; scoped to whole-statement selections in a single method, 0-1 output variables)
+10. ✅ Integrated terminal (`Ctrl+backtick`) — basic interactive shell (persistent PowerShell subprocess, plain text I/O; NOT a full terminal emulator — no ANSI colors, no full-screen apps)
+11. ✅ Command Palette (`Ctrl+Shift+P`) — substring-filtered (not true fuzzy matching), 28 commands registered
+12. ✅ Settings & Preferences page (`Ctrl+,`) — scoped to what's actually functional today: editor font/size/indentation, Format on Save; persisted to `%APPDATA%\Glue\settings.json`. The bigger Settings page described earlier in this doc (theme, LSP paths, Advisory Layer, Git/GitHub, Secrets) will grow into this as those features actually get built — no placeholder settings for things that don't exist yet.
+
+**Phase 2 is now fully complete.** Also added along the way, not originally itemized: a resizable bottom panel (`GridSplitter` between editor and Problems/Output/References/Terminal, replacing a fixed height), and a modified-file indicator in the Explorer tree (subtle gold/tan text color, matching the syntax highlighter's Method color).
 
 **Phase 3 — Scaffolding & security**
 13. Template manifest format + wizard UI
