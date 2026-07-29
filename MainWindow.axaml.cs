@@ -389,6 +389,11 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
 
+            case Avalonia.Input.Key.N when ctrl && shift:
+                OnNewProjectClicked(sender, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
             case Avalonia.Input.Key.N when ctrl:
                 _ = NewFile();
                 e.Handled = true;
@@ -825,6 +830,65 @@ public partial class MainWindow : Window
     private async void OnNewFileClicked(object? sender, RoutedEventArgs e) => await NewFile();
 
     /// <summary>
+    /// Opens Views/NewProjectDialog.axaml, and on confirmation, creates the
+    /// project via Services/ProjectScaffoldingService.cs, populates the
+    /// Explorer with it, opens it as a real project if it's C# (so
+    /// diagnostics/completion/navigation are project-aware immediately),
+    /// and opens its main file into the editor.
+    /// </summary>
+    private async void OnNewProjectClicked(object? sender, RoutedEventArgs e)
+    {
+        var templates = ProjectScaffoldingService.GetBuiltInTemplates();
+        var dialog = new NewProjectDialog(templates);
+        var result = await dialog.ShowDialog<NewProjectResult?>(this);
+
+        if (result is null) return;
+
+        var targetFolder = Path.Combine(result.ParentFolder, result.ProjectName);
+
+        if (Directory.Exists(targetFolder) && Directory.EnumerateFileSystemEntries(targetFolder).Any())
+        {
+            UpdateStatus($"New Project: '{targetFolder}' already exists and isn't empty — choose a different name/location");
+            return;
+        }
+
+        try
+        {
+            ProjectScaffoldingService.CreateProject(result.Template, targetFolder, result.ProjectName);
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus($"New Project failed: {ex.GetType().Name}: {ex.Message}");
+            return;
+        }
+
+        // Populate the Explorer with the newly created project.
+        var rootNode = ProjectTreeBuilder.Build(targetFolder);
+        ExplorerTree.ItemsSource = new[] { rootNode };
+
+        UpdateStatus($"Created '{result.ProjectName}' at {targetFolder}");
+
+        if (result.Template.Language == "csharp")
+        {
+            var csprojPath = Path.Combine(targetFolder, $"{result.ProjectName}.csproj");
+            if (File.Exists(csprojPath))
+            {
+                await _projectService.OpenProjectAsync(csprojPath);
+            }
+
+            // Open whichever file looks like the "main" one for this template.
+            var mainFile = result.Template.Files
+                .Select(f => Path.Combine(targetFolder, f.RelativePath.Replace("{{ProjectName}}", result.ProjectName)))
+                .FirstOrDefault(p => p.EndsWith("Program.cs") || p.EndsWith("Class1.cs"));
+
+            if (mainFile is not null && File.Exists(mainFile))
+            {
+                await LoadFileIntoEditorAsync(mainFile);
+            }
+        }
+    }
+
+    /// <summary>
     /// Prompts to save if there's no current file path yet, otherwise saves
     /// straight to it. Shared by File > Save and the Ctrl+S shortcut.
     /// File > Save All (SaveAllAsync) also saves the current file this way,
@@ -990,6 +1054,7 @@ public partial class MainWindow : Window
         return new List<CommandPaletteItem>
         {
             new("New File", () => OnNewFileClicked(this, e)),
+            new("New Project...", () => OnNewProjectClicked(this, e)),
             new("Open Folder...", () => OnOpenFolderClicked(this, e)),
             new("Open Project (.csproj)...", () => OnOpenProjectClicked(this, e)),
             new("Open File...", () => OnOpenClicked(this, e)),

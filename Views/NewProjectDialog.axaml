@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:Glue.Views"
+        x:Class="Glue.Views.NewProjectDialog"
+        Title="New Project"
+        Width="480" Height="440"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource BgSurfaceBrush}">
+
+    <StackPanel Margin="16" Spacing="10">
+        <TextBlock Text="Template" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <ListBox x:Name="TemplatesList"
+                 Height="140"
+                 Background="{DynamicResource BgCanvasBrush}"
+                 SelectionChanged="OnTemplateSelectionChanged">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="views:TemplateDisplayItem">
+                    <StackPanel Margin="4,4">
+                        <TextBlock Text="{Binding Name}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="{Binding Description}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock Text="Project name" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBox x:Name="ProjectNameBox" Text="MyProject" TextChanged="OnProjectNameOrLocationChanged" />
+
+        <TextBlock Text="Location" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBox x:Name="LocationBox" Grid.Column="0" IsReadOnly="True" Watermark="Choose a folder..." />
+            <Button Grid.Column="1" Content="Browse..." Margin="6,0,0,0" Click="OnBrowseClicked" />
+        </Grid>
+
+        <TextBlock x:Name="PreviewPathText"
+                   Text=""
+                   FontSize="11"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   TextWrapping="Wrap" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+            <Button Content="Cancel" Click="OnCancelClicked" />
+            <Button Content="Create" Click="OnCreateClicked" />
+        </StackPanel>
+    </StackPanel>
+
+</Window>

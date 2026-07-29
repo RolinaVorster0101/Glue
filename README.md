@@ -26,8 +26,8 @@ And beyond that — a lot of what a modern IDE actually needs is scattered acros
 | Area | Highlights |
 |---|---|
 | **Editor core** | AvaloniaEdit-based, fully customizable, code folding (persisted per file), Format Document driven by your own `.editorconfig` |
-| **Language intelligence** | Roslyn for C#; LSP for Go (`gopls`), C/C++ (`clangd`), TypeScript/JavaScript, Python, and CSS/SCSS/LESS — Go to Definition, Find References, Rename, Extract Method, and more, consistent across languages |
-| **CSS Quick Actions** | Right-click a selector to scaffold a media query (with personal default breakpoints), a `:hover`/`:focus`/`:active` block, or a dark-mode override — powered by the CSS language server, no manual boilerplate typing |
+| **Language intelligence** | Roslyn for C# — ✅ live diagnostics, completion, Go to Definition, Find All References, Rename, Extract Method, all project-aware. LSP for Go/C++/TS/Python/CSS — planned, not yet built (Phase 5) |
+| **CSS Quick Actions** | Right-click a selector to scaffold a media query (with personal default breakpoints), a `:hover`/`:focus`/`:active` block, or a dark-mode override — powered by the CSS language server, no manual boilerplate typing (Phase 5) |
 | **Scaffolding & templates** | A "New Project" wizard with a custom template engine — house-style boilerplate across C#/.NET, Node.js, React, TypeScript, and Rust, with a correct `.gitignore` included automatically every time |
 | **Security snippets** | Pre-vetted secure code blocks (file upload validation, parameterized queries, CSRF tokens) auto-inserted for known-risky scaffolding scenarios |
 | **Debugging** | DAP-based: `netcoredbg`, `delve`, `lldb-dap`/cpptools — conditional breakpoints, watch/immediate windows, Hot Reload |
@@ -36,8 +36,9 @@ And beyond that — a lot of what a modern IDE actually needs is scattered acros
 | **Secrets Manager** | Project-scoped, stored in the OS-level encrypted credential vault, structurally isolated from the LLM advisory layer — the model has no code path to reach secret values, ever |
 | **Advisory Analysis Layer** | Tier 1: deterministic Roslyn/LSP diagnostics. Tier 2: LLM-powered advisory findings with reviewable example fixes — never auto-applied for anything sensitive |
 | **Autonomous Agent Layer** *(optional, last phase)* | Task-level agent execution with plan → write → build/test → report, inspired by tools like Google Antigravity — kept explicitly separate from the advisory layer |
-| **Command Palette** | Fuzzy-searchable list of every command in the IDE — every feature registers itself here as it's built |
-| **Settings & Preferences** | One place to manage editor/theme/keybindings, `.editorconfig`, CSS breakpoints, language server paths, templates, and Advisory Layer behavior — no hand-editing config files |
+| **Integrated terminal** | ✅ Built — basic persistent PowerShell shell, plain text I/O. Not a full terminal emulator (no ANSI colors, no full-screen apps) |
+| **Command Palette** | ✅ Built (`Ctrl+Shift+P`) — substring-searchable list of every command, 28 registered so far, grows as new features land |
+| **Settings & Preferences** | ✅ Built (`Ctrl+,`), scoped to what's actually functional today: editor font/size/indentation, Format on Save, persisted to disk. Theme/keybindings/LSP paths/templates/Advisory Layer settings will grow in as those features get built |
 
 ## Tech stack
 
@@ -79,26 +80,32 @@ Glue/
   Glue.csproj          # Project file — Avalonia, AvaloniaEdit, Roslyn, MSBuildWorkspace references
   Program.cs           # Avalonia entry point (MSBuildLocator.RegisterDefaults() runs first)
   App.axaml(.cs)        # Application-level setup, theme, DevTools (Debug-only)
-  MainWindow.axaml(.cs) # Main shell window: menu, status bar, editor, Explorer, Problems/Output/References tabs
+  MainWindow.axaml(.cs) # Main shell window: menu, status bar, editor, Explorer, Problems/Output/References/Terminal tabs
   app.manifest          # Windows DPI/theming manifest
   Models/
-    FileTreeNode.cs      # Explorer sidebar's file tree node model
+    FileTreeNode.cs      # Explorer sidebar's file tree node model (with modified-file indicator support)
   Services/
-    RoslynDiagnosticsService.cs   # Live diagnostics (single-file + project-aware)
-    RoslynCompletionService.cs    # Basic completion (single-file + project-aware)
-    RoslynFoldingService.cs       # Code folding via Roslyn syntax tree
-    RoslynFormattingService.cs    # Format Document via Roslyn's formatter
-    RoslynNavigationService.cs    # Go to Definition, Find All References, Rename
-    RoslynProjectService.cs       # MSBuildWorkspace — true project parsing
-    RoslynReferences.cs           # Shared reference-assembly helper
-    FoldStateStore.cs             # Per-file fold state persistence
-    ProjectTreeBuilder.cs         # Explorer sidebar's folder→tree builder
-    BuildService.cs               # Real `dotnet build` subprocess
-    RunService.cs                 # Real `dotnet run` subprocess
+    RoslynDiagnosticsService.cs    # Live diagnostics (single-file + project-aware)
+    RoslynCompletionService.cs     # Basic completion (single-file + project-aware)
+    RoslynFoldingService.cs        # Code folding via Roslyn syntax tree
+    RoslynFormattingService.cs     # Format Document via Roslyn's formatter
+    RoslynNavigationService.cs     # Go to Definition, Find All References, Rename
+    RoslynExtractMethodService.cs  # Extract Method via SemanticModel.AnalyzeDataFlow
+    RoslynProjectService.cs        # MSBuildWorkspace — true project parsing
+    RoslynReferences.cs            # Shared reference-assembly helper
+    FoldStateStore.cs              # Per-file fold state persistence
+    ProjectTreeBuilder.cs          # Explorer sidebar's folder→tree builder
+    BuildService.cs                # Real `dotnet build` subprocess
+    RunService.cs                  # Real `dotnet run` subprocess
+    TerminalService.cs             # Basic interactive shell (persistent PowerShell subprocess)
+    SettingsService.cs             # Persisted editor/formatting preferences
   Views/
-    RenameDialog.axaml(.cs)             # "Enter new name" dialog
-    ConfirmRenameDialog.axaml(.cs)       # Lists affected files before Rename writes anything
-    UnsavedChangesDialog.axaml(.cs)      # Save All / Discard / Cancel prompt
+    RenameDialog.axaml(.cs)          # "Enter new name" dialog
+    ConfirmRenameDialog.axaml(.cs)   # Lists affected files before Rename writes anything
+    UnsavedChangesDialog.axaml(.cs)  # Save All / Discard / Cancel prompt
+    ExtractMethodDialog.axaml(.cs)   # "Enter new method name" dialog
+    CommandPaletteDialog.axaml(.cs)  # Ctrl+Shift+P searchable command list
+    SettingsDialog.axaml(.cs)        # Editor/formatting preferences UI
   Styles/
     Colors.axaml          # Color resource dictionary matching STYLEGUIDE.md
     GlueCSharp.xshd        # Custom C# syntax highlighting definition
@@ -121,18 +128,22 @@ Colors, typography, spacing, and component conventions — derived from the refe
 
 ## Project status
 
-**Phase 1 complete. Phase 2 mostly complete.**
+**Phase 1 complete. Phase 2 complete.**
 
 Built and working:
-- Editor with custom C# syntax highlighting, Explorer sidebar, File Open/Save/Save As/Save All
+- Editor with custom C# syntax highlighting, Explorer sidebar (with a modified-file indicator), File Open/Save/Save As/Save All
 - Live Roslyn diagnostics and basic completion (`Ctrl+Space`) — project-aware when a project is loaded, single-file fallback otherwise
 - Code folding (`#region`-aware, persisted per file) and Format Document
 - **True project parsing** via MSBuildWorkspace (File > Open Project) — real cross-file awareness, not single-file guesswork
 - Real `dotnet build` (`Ctrl+Shift+B`) and `dotnet run` (`Ctrl+F5`) as actual subprocesses, with live output
-- Go to Definition (`Ctrl+Alt+G`), Find All References (`Ctrl+Alt+R`), Rename (`F2`) — genuine Roslyn symbol resolution across the whole project
+- Go to Definition (`Ctrl+Alt+G`), Find All References (`Ctrl+Alt+R`), Rename (`F2`), Extract Method (`Ctrl+Alt+M`) — genuine Roslyn symbol resolution/data-flow analysis across the whole project
 - Multi-file safety: dirty-state tracking, a real Save All, confirmation before Rename writes anything, and unsaved-changes prompts on exit or when switching files
+- Integrated terminal (`Ctrl+backtick`) — basic interactive PowerShell shell, plain text I/O
+- Command Palette (`Ctrl+Shift+P`) — 28 commands, substring-searchable
+- Settings & Preferences (`Ctrl+,`) — editor font/size/indentation, Format on Save, persisted to disk
+- Resizable bottom panel (drag the splitter between the editor and Problems/Output/References/Terminal)
 
-Not yet built: Extract Method, integrated terminal, Command Palette, Settings & Preferences page (the rest of Phase 2), multi-tab editing (single-buffer editing for now — see `docs/ROADMAP.md` section 2.2b), and everything from Phase 3 onward (scaffolding/templates, security snippets, debugging, multi-language support, the activity-rail visual restyle, database/Git/secrets integration, the Advisory Layer).
+Not yet built: multi-tab editing (single-buffer editing for now — see `docs/ROADMAP.md` section 2.2b), and everything from Phase 3 onward (scaffolding/templates, security snippets, debugging, multi-language support, the activity-rail visual restyle, database/Git/secrets integration, the Advisory Layer).
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full build order and exactly what's marked done.
 

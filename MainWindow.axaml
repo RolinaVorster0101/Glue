@@ -16,6 +16,7 @@
              Solution Explorer / project-aware shell from the roadmap. -->
         <Menu DockPanel.Dock="Top" Background="{DynamicResource BgSurfaceBrush}">
             <MenuItem Header="_File" Foreground="{DynamicResource TextPrimaryBrush}">
+                <MenuItem Header="_New Project..." InputGesture="Ctrl+Shift+N" Click="OnNewProjectClicked" />
                 <MenuItem Header="_New File" InputGesture="Ctrl+N" Click="OnNewFileClicked" />
                 <MenuItem Header="Open _Folder..." Click="OnOpenFolderClicked" />
                 <MenuItem Header="Open _Project (.csproj)..." Click="OnOpenProjectClicked" />
